@@ -1,3 +1,6 @@
+#
+# use nano_neurons code on arduino
+#
 import serial
 import nengo
 import struct
@@ -26,6 +29,8 @@ def ard_output(t,x):
 
 model = nengo.Network()
 with model:
-    ard = nengo.Node([0])
-    output = nengo.Node(ard_output, size_in=1, size_out=0)
-    nengo.Connection(ard, output, synapse=None)
+    stim = nengo.Node([0])
+    ens = nengo.Ensemble(100, 1)
+    motor = nengo.Node(ard_output, size_in=1, size_out=0)
+    nengo.Connection(stim, ens, synapse=None)
+    nengo.Connection(ens, motor, synapse = 0.01)
