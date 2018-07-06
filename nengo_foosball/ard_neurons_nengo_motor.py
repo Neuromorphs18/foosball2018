@@ -1,6 +1,3 @@
-#
-# works with nano_rotate_nengo arduino code
-#
 import serial
 import nengo
 import struct
@@ -18,8 +15,12 @@ def ard_output(t,x):
     global last_write_time
     cur_time = timeit.default_timer()
     if last_write_time is None or cur_time > (last_write_time+.01):
-        x = int(x*127) # max 127 pwm
-        a = struct.pack('b', x)
+        x = int(x*255) # max 255 pwm
+        dir = 0
+        if x<0:
+            x = -x
+            dir = 1
+        a = struct.pack('BB', x, dir)
         ser.write(str(a))
         last_write_time = cur_time
 
