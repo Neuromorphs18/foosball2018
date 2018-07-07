@@ -1,10 +1,13 @@
 #
 # use nano_neurons code on arduino
+# reset motor, wait for callibration to stop; refresh nengo
+# hit play (serial should connect after a bit)
 #
 import serial
 import nengo
 import struct
 import timeit
+import time
 
 ser = None
 last_write_time = None
@@ -13,6 +16,7 @@ def on_start(sim):
     global ser
     ser = serial.Serial('/dev/cu.usbserial-AI03K35Q', 9600)
     ser.isOpen()
+    time.sleep(2)
 
 def ard_output(t,x):
     global last_write_time
