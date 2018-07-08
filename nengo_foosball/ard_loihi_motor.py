@@ -1,20 +1,24 @@
 #
 # use nano_neurons code on arduino
-# reset motor, wait for callibration to stop; refresh nengo
+# reset motor, wait for callibration to stop
 # hit play (serial should connect after a bit)
-#
+# Loihi superhost has to be plugged into the arduino and make
+# sure the ttyUSBX is correct
+
 import serial
 import nengo
 import struct
 import timeit
 import time
 
+max_loihi_time = 5.0
+
 ser = None
 last_write_time = None
 
 def on_start(sim):
     global ser
-    ser = serial.Serial('/dev/cu.usbserial-AI03K35Q', 9600)
+    ser = serial.Serial('/dev/ttyUSB1', 9600)
     ser.isOpen()
     time.sleep(2)
 
