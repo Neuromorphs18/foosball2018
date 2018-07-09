@@ -14,9 +14,9 @@ last_write_time = None
 
 def on_start(sim):
     global ser
-    ser = serial.Serial('/dev/cu.usbserial-AI03K35Q', 9600)
+    ser = serial.Serial('COM8', 9600)
     ser.isOpen()
-    time.sleep(2)
+    time.sleep(15)
 
 def ard_output(t,x):
     global last_write_time
@@ -27,6 +27,7 @@ def ard_output(t,x):
         if x<0:
             x = -x
             dir = 1
+        if x> 255: x = 255
         a = struct.pack('BB', x, dir)
         ser.write(a)
         last_write_time = cur_time
