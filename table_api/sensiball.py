@@ -10,17 +10,21 @@ class Table:
         self.handlers_lock = threading.Lock()
         self.running = True
         def reader():
+            previous_positions = (0 for index in range(0, 16))
             try:
                 received_bytes = bytearray()
                 while self.running:
                     received_bytes.append(struct.unpack('B', self.sensiball_serial.read(1))[0])
                     if len(received_bytes) == 32:
-                        positions = struct.unpack('h' * 16, received_bytes)
+                        positions = tuple(
+                            position if position != 32767 else previous_positions[index]
+                            for index, position in enumerate(struct.unpack('h' * 16, received_bytes)))
                         self.handlers_lock.acquire()
                         for handler in self.handlers:
                             handler.handle_positions(positions)
-                        received_bytes = bytearray()
                         self.handlers_lock.release()
+                        received_bytes = bytearray()
+                        previous_positions = positions
             except serial.SerialException as error:
                 if self.running:
                     raise
