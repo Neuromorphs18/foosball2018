@@ -6,30 +6,38 @@ class Table:
     def __init__(self, device):
         self.sensiball_serial = serial.Serial(device, baudrate=115200, rtscts=True)
         self.sensiball_serial.reset_input_buffer()
-        self.listeners = []
-        self.listeners_lock = threading.Lock()
+        self.handlers = []
+        self.handlers_lock = threading.Lock()
         self.running = True
         def reader():
-            received_bytes = bytearray()
-            while self.running:
-                received_bytes.append(struct.unpack('B', sensiball_serial.read(1))[0])
-                if len(received_bytes) == 32:
-                    positions = struct.unpack('h' * 16, received_bytes)
-                    listeners_lock.acquire()
-                    for listener in listeners:
-                        listener(positions)
-                    received_bytes = bytearray()
-                    listeners_lock.release()
+            previous_positions = (0 for index in range(0, 16))
+            try:
+                received_bytes = bytearray()
+                while self.running:
+                    received_bytes.append(struct.unpack('B', self.sensiball_serial.read(1))[0])
+                    if len(received_bytes) == 32:
+                        positions = tuple(
+                            position if position != 32767 else previous_positions[index]
+                            for index, position in enumerate(struct.unpack('h' * 16, received_bytes)))
+                        self.handlers_lock.acquire()
+                        for handler in self.handlers:
+                            handler.handle_positions(positions)
+                        self.handlers_lock.release()
+                        received_bytes = bytearray()
+                        previous_positions = positions
+            except serial.SerialException as error:
+                if self.running:
+                    raise
         self.reading_thread = threading.Thread(target=reader)
         self.reading_thread.daemon = True
         self.reading_thread.start()
 
-    def add_listener(listener):
-        self.listeners_lock.acquire()
-        self.listeners.append(listener)
-        self.listeners_lock.release()
+    def add_handler(self, handler):
+        self.handlers_lock.acquire()
+        self.handlers.append(handler)
+        self.handlers_lock.release()
 
-    def set_speeds(speeds):
+    def set_speeds(self, speeds):
         """
         speeds = (
             goalie_translation,
@@ -43,6 +51,8 @@ class Table:
         )
         Speeds must be in the range [-255, 255]
         """
+        if len(speeds) != 8:
+            raise ValueError('speeds must contain height values')
         are_clockwise = 0
         for index, speed in enumerate(speeds):
             are_clockwise |= ((1 if speed > 0 else 0) << index)
@@ -52,11 +62,12 @@ class Table:
         self.sensiball_serial.write(buffer)
         self.sensiball_serial.flush()
 
-    def calibrate():
+    def calibrate(self):
         self.sensiball_serial.write(struct.pack('B', 255))
         self.sensiball_serial.flush()
 
-    def close():
-        self.sensiball_serial.close()
+    def close(self):
+        self.set_speeds((0, 0, 0, 0, 0, 0, 0, 0))
         self.running = False
+        self.sensiball_serial.close()
         self.reading_thread.join()

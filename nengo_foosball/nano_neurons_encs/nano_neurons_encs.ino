@@ -6,6 +6,8 @@
 */
 #define rotate_dir 7
 #define rotate_pwm 9
+#define encoder_a 2
+#define encoder_b 3
 #define vert 6       // Vertical position sensor for player shaft
 
 void setup()
@@ -13,8 +15,12 @@ void setup()
  Serial.begin(9600);
  pinMode(rotate_dir, OUTPUT);
  pinMode(rotate_pwm, OUTPUT);
+ pinMode(encoder_a, INPUT);
+ pinMode(encoder_b, INPUT);
  //pinMode (vert, INPUT_PULLUP);
  delay(3000);                  //wait here until Slide has positioned at Inner Limit. Players must be at
+ attachInterrupt(0, A_CHANGE, CHANGE);
+ attachInterrupt(1, B_CHANGE, CHANGE);
  rotateInit();                  // inner Limit so that the Opto lines up with the heat shrink.
  delay(3000);                 // Wait here so that Slide moves player 
 }
@@ -50,6 +56,5 @@ void loop()
    }
    //Serial.write(spd);
    analogWrite(rotate_pwm, spd);    //   
-   //delay(5);
 }
 

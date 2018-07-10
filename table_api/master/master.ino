@@ -21,10 +21,10 @@ byte serial_message_index = 0;
 unsigned long previous_write = 0;
 
 /// crc calculates the CRC for the given bytes.
-byte crc(const byte* bytes, byte size) {
+byte crc(const byte* message, byte size) {
     byte crc8 = 0x00;
     while (size--) {
-        byte extract = *bytes++;
+        byte extract = *message++;
         for (byte index = 8; index != 0; --index) {
             byte sum = (crc8 ^ extract) & 0x01;
             crc8 >>= 1;
@@ -38,18 +38,16 @@ byte crc(const byte* bytes, byte size) {
 }
 
 /// is_crc_valid validates the given message with the CRC as last byte.
-bool is_crc_valid(const byte* bytes, byte size) {
-    return bytes[size - 1] == crc(bytes, size - 1);
+bool is_crc_valid(const byte* message, byte size) {
+    return message[size - 1] == crc(message, size - 1);
 }
 
 /// write_to_slave sends a message to a slave.
 /// bytes' last byte will be replaced with the CRC.
-void write_to_slave(byte index, byte* bytes, byte size) {
-    bytes[size - 1] = crc(bytes, size - 1);
+void write_to_slave(byte index, byte* message, byte size) {
+    message[size - 1] = crc(message, size - 1);
     Wire.beginTransmission(index + 8);
-    for (byte byte_index = 0; byte_index < size; ++byte_index) {
-        Wire.write(bytes[bytes_index]);
-    }
+    Wire.write(message, size);
     Wire.endTransmission();
 }
 

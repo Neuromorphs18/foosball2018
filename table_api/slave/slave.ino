@@ -97,6 +97,7 @@ void handle_request_event() {
         (normalized_maximum_pulses >> 8) & 0xff,
     };
     message[5] = crc(message, 5);
+    Wire.write(message, sizeof(message));
 }
 
 /// forward_change is called when the forward encoder's value changes.
@@ -135,9 +136,6 @@ void backward_change() {
 
 /// setup runs once on boot.
 void setup() {
-
-    Serial.begin(9600); // @DEBUG
-
     pinMode(direction_pin, OUTPUT);
     pinMode(forward_encoder_pin, INPUT);
     pinMode(backward_encoder_pin, INPUT);
