@@ -109,6 +109,7 @@ class FoosballEnv(gym.Env):
                                ys=np.linspace(0, foosball.height-foosball.height/3-25, 3), 
                                max_y=foosball.height/3+25,
                                color="yellow", goal_left=True))
+    return self.get_observation()
 
   def seed(self, seed=None):
       return [seed]
