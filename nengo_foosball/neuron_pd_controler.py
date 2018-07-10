@@ -12,11 +12,10 @@ import sensiball
 def listener(positions):
     pass
 
-sensiball.add_listener(listener)
-
 def on_start(sim):
-    sensiball.init_table()
+    table = sensiball.Table('/dev/???')
     time.sleep(5)
+    table.add_listener(listener)
 
 def ard_output(t,x):
     x = int(x * 255)
