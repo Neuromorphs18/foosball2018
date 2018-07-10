@@ -82,12 +82,15 @@ class Foosball(object):
         
     def step(self, dt, slide):
         self.ball_pos += self.ball_vel*dt  
+        reward = 0
         
         if self.ball_pos[0]-self.ball_radius < 0 and self.height/3 < self.ball_pos[1] < 2*self.height/3:
             self.score[0] += 1
+            reward = 1
             self.reset_ball()
         if self.ball_pos[0]+self.ball_radius > self.width and self.height/3 < self.ball_pos[1] < 2*self.height/3:
             self.score[1] += 1
+            reward = 1
             self.reset_ball()
         
         
@@ -114,6 +117,7 @@ class Foosball(object):
             if v_norm > 0:
                 mag = np.linalg.norm(self.ball_vel)
                 self.ball_vel = mag * new_v / v_norm + p.velocity
+        return reward
         
     def svg(self):
 

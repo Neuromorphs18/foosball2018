@@ -19,6 +19,11 @@ class Foosball2(Foosball):
     def __init__(self, *args, **kwargs):
         super(Foosball2, self).__init__(*args, **kwargs)
         self.done = 0
+
+    @property
+    def diffscore(self):
+        return int(np.diff(self.score))
+
     def get_players_state(self):
         return [np.array([p.offset, p.rotate_offset]) for p in self.players]
 
@@ -36,8 +41,8 @@ class Foosball2(Foosball):
         return  np.concatenate([bstate,pstate])
         
     def act(self, time, action_vector):
-        self.step(time, action_vector)
-        return self.get_state_flat(), self.score, self.done
+        reward = self.step(time, action_vector)
+        return self.get_state_flat(), reward, self.done
 
 SLIMIN = -1
 SLIMAX = +1
@@ -72,7 +77,7 @@ class FoosballEnv(gym.Env):
     action_decoded = self.decode_discrete_action(action)
     state, score, done = self.foosball.act(self.time, action_decoded)
     self.time += self.dt
-    return state, score, done, {'time':self.time} 
+    return state, score, done, {} 
 
   def reset(self):
     self.foosball = foosball = Foosball2()

@@ -21,7 +21,6 @@ def main():
         callback=callback
     )
     print("Saving model to cartpole_model.pkl")
-    act.save("cartpole_model.pkl")
 
 
 if __name__ == '__main__':
