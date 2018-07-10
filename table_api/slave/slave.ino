@@ -45,9 +45,31 @@ volatile int16_t pulses = 0;
 volatile bool is_clockwise = false;
 volatile byte speed = 0;
 
+/// crc calculates the CRC for the given bytes.
+byte crc(const byte* message, byte size) {
+    byte crc8 = 0x00;
+    while (size--) {
+        byte extract = *message++;
+        for (byte index = 8; index != 0; --index) {
+            byte sum = (crc8 ^ extract) & 0x01;
+            crc8 >>= 1;
+            if (sum > 0) {
+                crc8 ^= 0x8C;
+            }
+            extract >>= 1;
+        }
+    }
+    return crc8;
+}
+
+/// is_crc_valid validates the given message with the CRC as last byte.
+bool is_crc_valid(const byte* message, byte size) {
+    return message[size - 1] == crc(message, size - 1);
+}
+
 /// receive_event is called when the I2C master sends data.
 void handle_receive_event(int bytes_received) {
-    byte wire_bytes[2];
+    byte wire_bytes[3];
     byte wire_bytes_index = 0;
     while (Wire.available()) {
         if (wire_bytes_index < sizeof(wire_bytes)) {
@@ -55,9 +77,9 @@ void handle_receive_event(int bytes_received) {
             ++wire_bytes_index;
         }
     }
-    if (wire_bytes_index == 1) {
+    if (wire_bytes_index == 2 && is_crc_valid(wire_bytes, 2)) {
         state = calibrating;
-    } else {
+    } else if (wire_bytes_index == 3 && is_crc_valid(wire_bytes, 3)) {
         is_clockwise = (wire_bytes[0] == 1);
         speed = wire_bytes[1];
     }
@@ -67,11 +89,14 @@ void handle_receive_event(int bytes_received) {
 void handle_request_event() {
     const uint16_t normalized_pulses = pulses - minimum_pulses;
     const uint16_t normalized_maximum_pulses = maximum_pulses - minimum_pulses;
-    Wire.write(state);
-    Wire.write(normalized_pulses & 0xff);
-    Wire.write((normalized_pulses >> 8) & 0xff);
-    Wire.write(normalized_maximum_pulses & 0xff);
-    Wire.write((normalized_maximum_pulses >> 8) & 0xff);
+    byte message[6] = {
+        state,
+        normalized_pulses & 0xff,
+        (normalized_pulses >> 8) & 0xff,
+        normalized_maximum_pulses & 0xff,
+        (normalized_maximum_pulses >> 8) & 0xff,
+    };
+    message[5] = crc(message, 5);
 }
 
 /// forward_change is called when the forward encoder's value changes.

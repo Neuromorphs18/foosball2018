@@ -20,10 +20,43 @@ byte new_speeds[8];
 byte serial_message_index = 0;
 unsigned long previous_write = 0;
 
+/// crc calculates the CRC for the given bytes.
+byte crc(const byte* bytes, byte size) {
+    byte crc8 = 0x00;
+    while (size--) {
+        byte extract = *bytes++;
+        for (byte index = 8; index != 0; --index) {
+            byte sum = (crc8 ^ extract) & 0x01;
+            crc8 >>= 1;
+            if (sum > 0) {
+                crc8 ^= 0x8C;
+            }
+            extract >>= 1;
+        }
+    }
+    return crc8;
+}
+
+/// is_crc_valid validates the given message with the CRC as last byte.
+bool is_crc_valid(const byte* bytes, byte size) {
+    return bytes[size - 1] == crc(bytes, size - 1);
+}
+
+/// write_to_slave sends a message to a slave.
+/// bytes' last byte will be replaced with the CRC.
+void write_to_slave(byte index, byte* bytes, byte size) {
+    bytes[size - 1] = crc(bytes, size - 1);
+    Wire.beginTransmission(index + 8);
+    for (byte byte_index = 0; byte_index < size; ++byte_index) {
+        Wire.write(bytes[bytes_index]);
+    }
+    Wire.endTransmission();
+}
+
 /// read_from_slave reads a slave's state and position.
 void read_from_slave(byte index, state_type* state, uint16_t* pulses, uint16_t* maximum_pulses) {
-    Wire.requestFrom(index + 8, 5);
-    byte wire_bytes[5];
+    Wire.requestFrom(index + 8, 6);
+    byte wire_bytes[6];
     byte wire_bytes_index = 0;
     while (Wire.available()) {
         if (wire_bytes_index < sizeof(wire_bytes)) {
@@ -31,7 +64,7 @@ void read_from_slave(byte index, state_type* state, uint16_t* pulses, uint16_t* 
             ++wire_bytes_index;
         }
     }
-    if (wire_bytes_index == 5) {
+    if (wire_bytes_index == 6 && is_crc_valid(wire_bytes, 6)) {
         if (state) {
             switch (wire_bytes[0]) {
                 case 1:
@@ -68,10 +101,8 @@ void calibrate(bool force) {
     state_type states[8];
     for (byte index = 0; index < 8; ++index) {
         if (enabled[index]) {
-            Wire.beginTransmission(index + 8);
-            Wire.write(0);
-            Wire.write(0);
-            Wire.endTransmission();
+            byte message[3] = {0, 0};
+            write_to_slave(index, message, 3);
             if (force) {
                 states[index] = uncalibrated;
             } else {
@@ -83,29 +114,26 @@ void calibrate(bool force) {
         for (byte index = 0; index < 4; ++index) {
             if (enabled[index * 2]) {
                 switch (states[index * 2]) {
-                    case uncalibrated:
-                        Wire.beginTransmission(index * 2 + 8);
-                        Wire.write(0);
-                        Wire.endTransmission();
+                    case uncalibrated: {
+                        byte message[2] = {0};
+                        write_to_slave(index * 2, message, 2);
                         states[index * 2] = calibrating;
                         break;
+                    }
                     case calibrating:
                         read_from_slave(index * 2, &(states[index * 2]), nullptr, nullptr);
                         break;
-                    case calibrated:
-                        Wire.beginTransmission(index * 2 + 8);
-                        Wire.write(0);
-                        Wire.write(translation_calibration_speed);
-                        Wire.endTransmission();
+                    case calibrated: {
+                        byte message[3] = {0, translation_calibration_speed};
+                        write_to_slave(index * 2, message, 3);
                         if (enabled[index * 2 + 1]) {
                             switch (states[index * 2 + 1]) {
                                 case uncalibrated:
                                     uint16_t pulses;
                                     read_from_slave(index * 2, nullptr, &pulses, nullptr);
                                     if (pulses == 0) {
-                                        Wire.beginTransmission(index * 2 + 1 + 8);
-                                        Wire.write(0);
-                                        Wire.endTransmission();
+                                        byte message[2] = {0};
+                                        write_to_slave(index * 2 + 1, message, 2);
                                         states[index * 2 + 1] = calibrating;
                                     }
                                     break;
@@ -117,6 +145,7 @@ void calibrate(bool force) {
                             }
                         }
                         break;
+                    }
                 }
             }
         }
@@ -144,10 +173,8 @@ void loop() {
         previous_write = now;
         for (byte index = 0; index < 8; ++index) {
             if (enabled[index]) {
-                Wire.beginTransmission(index + 8);
-                Wire.write((are_clockwise >> index) & 1);
-                Wire.write(speeds[index]);
-                Wire.endTransmission();
+                byte message[3] = {(are_clockwise >> index) & 1, speeds[index]};
+                write_to_slave(index, message, 3);
                 uint16_t pulses;
                 uint16_t maximum_pulses;
                 read_from_slave(index, nullptr, &pulses, &maximum_pulses);
