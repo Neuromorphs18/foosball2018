@@ -23,7 +23,6 @@ class Handler(object):
             pulses, # forward rotation
             maximum_pulses, # forward rotation
         )
-        For each motor, `pulses` is in the integer range [0, maximum_pulses - 1].
         For translations, `pulses == 0` means the shaft reached the inner limit,
             and `pulses == maximum_pulses - 1` means it reached the outer one.
         For rotations, `maximum_pulses` is always `980`.
