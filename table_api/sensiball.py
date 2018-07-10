@@ -6,8 +6,8 @@ class Table:
     def __init__(self, device):
         self.sensiball_serial = serial.Serial(device, baudrate=115200, rtscts=True)
         self.sensiball_serial.reset_input_buffer()
-        self.listeners = []
-        self.listeners_lock = threading.Lock()
+        self.handlers = []
+        self.handlers_lock = threading.Lock()
         self.running = True
         def reader():
             received_bytes = bytearray()
@@ -15,19 +15,19 @@ class Table:
                 received_bytes.append(struct.unpack('B', self.sensiball_serial.read(1))[0])
                 if len(received_bytes) == 32:
                     positions = struct.unpack('h' * 16, received_bytes)
-                    self.listeners_lock.acquire()
-                    for listener in self.listeners:
-                        listener(positions)
+                    self.handlers_lock.acquire()
+                    for handler in self.handlers:
+                        handler.handle_positions(positions)
                     received_bytes = bytearray()
-                    self.listeners_lock.release()
+                    self.handlers_lock.release()
         self.reading_thread = threading.Thread(target=reader)
         self.reading_thread.daemon = True
         self.reading_thread.start()
 
-    def add_listener(self, listener):
-        self.listeners_lock.acquire()
-        self.listeners.append(listener)
-        self.listeners_lock.release()
+    def add_handlers(self, handler):
+        self.handlers_lock.acquire()
+        self.handlers.append(handler)
+        self.handlers_lock.release()
 
     def set_speeds(self, speeds):
         """
