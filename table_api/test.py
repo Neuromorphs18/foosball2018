@@ -33,7 +33,8 @@ def listener(positions):
 
 table.add_listener(listener)
 
-table.set_speeds((255, 255, 0, 0, 0, 0, 0, 0))
+time.sleep(2)
+table.set_speeds((120, 120, 0, 0, 0, 0, 0, 0))
 time.sleep(1)
 table.set_speeds((-120, -120, 0, 0, 0, 0, 0, 0))
 time.sleep(1)

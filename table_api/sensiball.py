@@ -12,24 +12,24 @@ class Table:
         def reader():
             received_bytes = bytearray()
             while self.running:
-                received_bytes.append(struct.unpack('B', sensiball_serial.read(1))[0])
+                received_bytes.append(struct.unpack('B', self.sensiball_serial.read(1))[0])
                 if len(received_bytes) == 32:
                     positions = struct.unpack('h' * 16, received_bytes)
-                    listeners_lock.acquire()
-                    for listener in listeners:
+                    self.listeners_lock.acquire()
+                    for listener in self.listeners:
                         listener(positions)
                     received_bytes = bytearray()
-                    listeners_lock.release()
+                    self.listeners_lock.release()
         self.reading_thread = threading.Thread(target=reader)
         self.reading_thread.daemon = True
         self.reading_thread.start()
 
-    def add_listener(listener):
+    def add_listener(self, listener):
         self.listeners_lock.acquire()
         self.listeners.append(listener)
         self.listeners_lock.release()
 
-    def set_speeds(speeds):
+    def set_speeds(self, speeds):
         """
         speeds = (
             goalie_translation,
@@ -43,20 +43,25 @@ class Table:
         )
         Speeds must be in the range [-255, 255]
         """
+        if len(speeds) != 8:
+            raise ValueError('speeds must contain height values')
         are_clockwise = 0
         for index, speed in enumerate(speeds):
             are_clockwise |= ((1 if speed > 0 else 0) << index)
         buffer = bytearray([0x00, are_clockwise])
         for speed in speeds:
             buffer.append(abs(speed))
+
+        print("set_speeds", list(buffer))
+
         self.sensiball_serial.write(buffer)
         self.sensiball_serial.flush()
 
-    def calibrate():
+    def calibrate(self):
         self.sensiball_serial.write(struct.pack('B', 255))
         self.sensiball_serial.flush()
 
-    def close():
+    def close(self):
         self.sensiball_serial.close()
         self.running = False
         self.reading_thread.join()
