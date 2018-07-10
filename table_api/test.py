@@ -1,7 +1,7 @@
 import sensiball
 import time
 
-ready = False
+table = sensiball.Table(device='/dev/cu.usbmodemFA131')
 
 def listener(positions):
     """
@@ -29,18 +29,16 @@ def listener(positions):
     For rotations, `maximum_pulses` is always `980`.
         `pulses == 0` means vertical (default player position).
     """
-    global ready
-    ready = True
     print(positions)
 
-sensiball.add_listener(listener)
+table.add_listener(listener)
 
-while True:
-    if ready:
-        sensiball.set_speeds((255, 255, 0, 0, 0, 0, 0, 0))
-        time.sleep(1.5)
-        sensiball.set_speeds((-120, -120, 0, 0, 0, 0, 0, 0))
-        time.sleep(1.5)
-        sensiball.set_speeds((0, 0, 0, 0, 0, 0, 0, 0))
-        sensiball.calibrate()
-        time.sleep(5)
+table.set_speeds((255, 255, 0, 0, 0, 0, 0, 0))
+time.sleep(1)
+table.set_speeds((-120, -120, 0, 0, 0, 0, 0, 0))
+time.sleep(1)
+table.set_speeds((0, 0, 0, 0, 0, 0, 0, 0))
+table.calibrate()
+time.sleep(5)
+
+table.close()
