@@ -1,12 +1,10 @@
 import sensiball
 import time
 
-table = sensiball.Table(device='/dev/cu.usbmodemFA131')
-
 class Handler(object):
-
     def handle_positions(self, positions):
         """
+        This function is called every 20ms.
         positions = (
             pulses,  # goalie translation
             maximum_pulses, # goalie translation
@@ -33,6 +31,7 @@ class Handler(object):
         """
         print(positions)
 
+table = sensiball.Table(device='/dev/cu.usbmodemFA131')
 handler = Handler()
 table.add_handler(handler)
 
@@ -43,6 +42,4 @@ table.set_speeds((-120, -120, 0, 0, 0, 0, 0, 0))
 time.sleep(1)
 table.set_speeds((0, 0, 0, 0, 0, 0, 0, 0))
 table.calibrate()
-time.sleep(5)
-
 table.close()

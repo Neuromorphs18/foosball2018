@@ -10,21 +10,25 @@ class Table:
         self.handlers_lock = threading.Lock()
         self.running = True
         def reader():
-            received_bytes = bytearray()
-            while self.running:
-                received_bytes.append(struct.unpack('B', self.sensiball_serial.read(1))[0])
-                if len(received_bytes) == 32:
-                    positions = struct.unpack('h' * 16, received_bytes)
-                    self.handlers_lock.acquire()
-                    for handler in self.handlers:
-                        handler.handle_positions(positions)
-                    received_bytes = bytearray()
-                    self.handlers_lock.release()
+            try:
+                received_bytes = bytearray()
+                while self.running:
+                    received_bytes.append(struct.unpack('B', self.sensiball_serial.read(1))[0])
+                    if len(received_bytes) == 32:
+                        positions = struct.unpack('h' * 16, received_bytes)
+                        self.handlers_lock.acquire()
+                        for handler in self.handlers:
+                            handler.handle_positions(positions)
+                        received_bytes = bytearray()
+                        self.handlers_lock.release()
+            except serial.SerialException as error:
+                if self.running:
+                    raise
         self.reading_thread = threading.Thread(target=reader)
         self.reading_thread.daemon = True
         self.reading_thread.start()
 
-    def add_handlers(self, handler):
+    def add_handler(self, handler):
         self.handlers_lock.acquire()
         self.handlers.append(handler)
         self.handlers_lock.release()
@@ -51,9 +55,6 @@ class Table:
         buffer = bytearray([0x00, are_clockwise])
         for speed in speeds:
             buffer.append(abs(speed))
-
-        print("set_speeds", list(buffer))
-
         self.sensiball_serial.write(buffer)
         self.sensiball_serial.flush()
 
@@ -62,6 +63,7 @@ class Table:
         self.sensiball_serial.flush()
 
     def close(self):
-        self.sensiball_serial.close()
+        self.set_speeds((0, 0, 0, 0, 0, 0, 0, 0))
         self.running = False
+        self.sensiball_serial.close()
         self.reading_thread.join()
