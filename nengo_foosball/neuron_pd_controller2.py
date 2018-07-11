@@ -14,6 +14,7 @@ class TableInOut(object):
         
     def handle_positions(self, positions):
         # map to -1,1
+        # print(positions)
         self.nengo_position = 2*(float(positions[0])/float(positions[1]))-1
 
         #tmp_now = timeit.default_timer()
@@ -32,19 +33,26 @@ def on_start(sim):
     table = sensiball.Table('/dev/cu.usbmodem1421')
     table_dict[table] = None
     time.sleep(5)
+    table.calibrate()
+    time.sleep(5)
     table.add_handler(table_inout)
 
 def on_close(sim):
     for key in table_dict:
         key.close()
 
+now = timeit.default_timer()
 def ard_output(t,x):
-    x = int(x * 255)
-    if x > 255:
-        x = 255
-    elif x < -255:
-        x = -255
-    #table.set_speeds((x, 0, 0, 0, 0, 0, 0, 0))
+    global now
+    global table
+    if timeit.default_timer() > now + 0.01:
+        x = int(x * 255)
+        if x > 255:
+            x = 255
+        elif x < -255:
+            x = -255
+        table.set_speeds((x, 0, 0, 0, 0, 0, 0, 0))
+        now = timeit.default_timer()
 
 model = nengo.Network()
 with model:
