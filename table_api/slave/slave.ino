@@ -44,6 +44,7 @@ volatile int16_t maximum_pulses = 980;
 volatile int16_t pulses = 0;
 volatile bool is_clockwise = false;
 volatile byte speed = 0;
+unsigned int led_count = 0;
 
 /// crc calculates the CRC for the given bytes.
 byte crc(const byte* message, byte size) {
@@ -136,6 +137,8 @@ void backward_change() {
 
 /// setup runs once on boot.
 void setup() {
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HIGH);
     pinMode(direction_pin, OUTPUT);
     pinMode(forward_encoder_pin, INPUT);
     pinMode(backward_encoder_pin, INPUT);
@@ -171,6 +174,9 @@ void setup() {
 }
 
 void loop() {
+    ++led_count;
+    digitalWrite(LED_BUILTIN, led_count > 32767 ? HIGH : LOW);
+
     switch (state) {
         case uncalibrated:
             break;

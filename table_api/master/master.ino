@@ -8,7 +8,7 @@ enum state_type {
 };
 
 /// constants
-const unsigned long frame_duration = 20; // time between I2C writes in ms
+const unsigned long frame_duration = 10; // time between I2C writes in ms
 const bool enabled[8] = {true, true, false, false, false, false, false, false}; // enabled motors
 const byte translation_calibration_speed = 60;
 
@@ -19,6 +19,7 @@ byte new_are_clockwise = 0;
 byte new_speeds[8];
 byte serial_message_index = 0;
 unsigned long previous_write = 0;
+unsigned int led_count = 0;
 
 /// crc calculates the CRC for the given bytes.
 byte crc(const byte* message, byte size) {
@@ -160,33 +161,39 @@ void calibrate(bool force) {
 }
 
 void setup() {
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HIGH);
     Serial.begin(115200);
     Wire.begin();
     calibrate(false);
 }
 
 void loop() {
+    ++led_count;
+    digitalWrite(LED_BUILTIN, led_count > 32767 ? HIGH : LOW);
+
     const unsigned long now = millis();
     if (now - previous_write >= frame_duration) {
         previous_write = now;
         for (byte index = 0; index < 8; ++index) {
+            byte serial_message[4] = {0xff, 0x7f, 0xff, 0x7f};
             if (enabled[index]) {
-                byte message[3] = {(are_clockwise >> index) & 1, speeds[index]};
+                byte message[3] = {(are_clockwise >> index) & 1, speeds[index], 0};
                 write_to_slave(index, message, 3);
+                state_type state;
                 uint16_t pulses;
                 uint16_t maximum_pulses;
-                read_from_slave(index, nullptr, &pulses, &maximum_pulses);
-                Serial.write(pulses & 0xff);
-                Serial.write((pulses >> 8) & 0xff);
-                Serial.write(maximum_pulses & 0xff);
-                Serial.write((maximum_pulses >> 8) & 0xff);
-            } else {
-                Serial.write(0);
-                Serial.write(0);
-                Serial.write(0);
-                Serial.write(0);
+                read_from_slave(index, &state, &pulses, &maximum_pulses);
+                if (state == calibrated) {
+                    serial_message[0] = pulses & 0xff;
+                    serial_message[1] = (pulses >> 8) & 0xff;
+                    serial_message[2] = maximum_pulses & 0xff;
+                    serial_message[3] = (maximum_pulses >> 8) & 0xff;
+                }
             }
+            Serial.write(serial_message, sizeof(serial_message));
         }
+        Serial.flush();
     }
     if (Serial.available()) {
         const byte serial_byte = Serial.read();

@@ -2,12 +2,7 @@ import sensiball
 import time
 import sys
 
-table = sensiball.Table(device='/dev/cu.usbmodemFA131')
-
 class Handler(object):
-    def __init__(self):
-        self.speed = 0
-
     def handle_positions(self, positions):
         ratio = round(float(positions[0]) / float(positions[1]) * 100)
         if ratio > 100:
@@ -15,13 +10,15 @@ class Handler(object):
         elif ratio < 0:
             ratio = 0
         sys.stdout.write('\r' + '-' * (100 - ratio) + '█' + '-' * ratio)
-        table.set_speeds((self.speed, 0, 0, 0, 0, 0, 0, 0))
 
 handler = Handler()
+table = sensiball.Table(device='/dev/cu.usbmodemFA131')
 table.add_handler(handler)
 
 while True:
-    handler.speed = 60
-    time.sleep(1)
-    handler.speed = -60
-    time.sleep(1)
+    for i in range(0, 1):
+        table.set_speeds((60, 0, 0, 0, 0, 0, 0, 0))
+        time.sleep(0.001)
+    for i in range(0, 1):
+        table.set_speeds((-60, 0, 0, 0, 0, 0, 0, 0))
+        time.sleep(0.001)
