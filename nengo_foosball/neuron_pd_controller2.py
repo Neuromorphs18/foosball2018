@@ -1,7 +1,4 @@
 #
-# use nano_neurons code on arduino
-# reset motor, wait for callibration to stop; refresh nengo
-# hit play (serial should connect after a bit)
 #
 import nengo
 import time
@@ -13,17 +10,15 @@ import sensiball
 class TableInOut(object):
     def __init__(self):
         self.nengo_position = 0
-        self.output = (0, 0, 0, 0, 0, 0, 0, 0)
-        self.now = timeit.default_timer()
+        #self.now = timeit.default_timer()
         
     def handle_positions(self, positions):
         # map to -1,1
         self.nengo_position = 2*(float(positions[0])/float(positions[1]))-1
-        table.set_speeds(self.output)
 
-        tmp_now = timeit.default_timer()
-        print(tmp_now-self.now)
-        self.now = tmp_now 
+        #tmp_now = timeit.default_timer()
+        #print(tmp_now-self.now)
+        #self.now = tmp_now 
 
     def __call__(self, t):
         return self.nengo_position
@@ -49,7 +44,7 @@ def ard_output(t,x):
         x = 255
     elif x < -255:
         x = -255
-    table_inout.output = (x, 0, 0, 0, 0, 0, 0, 0)
+    #table.set_speeds((x, 0, 0, 0, 0, 0, 0, 0))
 
 model = nengo.Network()
 with model:
