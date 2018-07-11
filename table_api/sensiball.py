@@ -4,7 +4,13 @@ import threading
 import sys
 
 class Table:
-    def __init__(self, device):
+    def __init__(self, device, delay_init=False):
+        if not delay_init:
+            self.init()
+
+    def init(self):
+        if self.sensiball_serial:
+            raise Exception('already initialized')
         self.sensiball_serial = serial.Serial(device, baudrate=115200, rtscts=True, timeout=None)
         self.sensiball_serial.reset_input_buffer()
         self.handlers = []
