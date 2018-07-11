@@ -5,7 +5,7 @@ import sys
 
 class Table:
     def __init__(self, device):
-        self.sensiball_serial = serial.Serial(device, baudrate=115200, rtscts=True)
+        self.sensiball_serial = serial.Serial(device, baudrate=115200, rtscts=True, timeout=None)
         self.sensiball_serial.reset_input_buffer()
         self.handlers = []
         self.handlers_lock = threading.Lock()
@@ -16,13 +16,18 @@ class Table:
         def reader():
             previous_positions = (0 for index in range(0, 16))
             try:
-                received_bytes = bytearray()
+                old_bytes = bytes([])
                 while self.running:
-                    received_bytes.append(struct.unpack('B', self.sensiball_serial.read(1))[0])
-                    if len(received_bytes) == 32:
+                    old_bytes += self.sensiball_serial.read()
+                    if len(old_bytes) >= 32:
+                        extra = len(old_bytes) % 32
+                        valid, old_bytes = old_bytes[:-extra], old_bytes[-extra:]
+                        received_bytes = struct.unpack('B'*32, valid[-32:])
+
                         positions = tuple(
                             position if position != 32767 else previous_positions[index]
-                            for index, position in enumerate(struct.unpack('h' * 16, received_bytes)))
+                            #for index, position in enumerate(struct.unpack('h' * 16, received_bytes)))
+                            for index, position in enumerate(struct.unpack('h' * 16, valid[-32:])))
                         self.handlers_lock.acquire()
                         for handler in self.handlers:
                             handler.handle_positions(positions)
