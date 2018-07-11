@@ -10,9 +10,9 @@
 
 void setup()
 {
+ Serial.begin(9600);
  pinMode(rotate_dir, OUTPUT);
  pinMode(rotate_pwm, OUTPUT);
- Serial.begin(9600);
  //pinMode (vert, INPUT_PULLUP);
  delay(3000);                  //wait here until Slide has positioned at Inner Limit. Players must be at
  rotateInit();                  // inner Limit so that the Opto lines up with the heat shrink.
@@ -50,5 +50,6 @@ void loop()
    }
    //Serial.write(spd);
    analogWrite(rotate_pwm, spd);    //   
+   //delay(5);
 }
 
