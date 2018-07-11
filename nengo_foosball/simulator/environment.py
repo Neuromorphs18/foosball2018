@@ -7,6 +7,7 @@ class Player(object):
         self.ys = ys
         self.max_y = max_y
         self.offset = max_y / 2
+        self.reset_offset = max_y / 2
         self.radius = 18
         self.max_radius = 30
         self.color = color
@@ -120,7 +121,7 @@ class Foosball(object):
         self.ball_pos = np.array([self.width/2, self.height/2])
         self.ball_vel = np.random.uniform(-10, 10, 2) # ball velocity at reset
         for p in self.players:
-            p.offset = 0
+            p.reset_offset = 0
             p.slide_velocity = 0
             p.rotate_offset = 0 
             p.rot_velocity = 0
@@ -187,6 +188,9 @@ class Foosball(object):
                          goal_height=self.height/3)
 
         return template
+
+    def draw(self):
+        pass
         
     def get_state(self):
         # b = blue, y = yellow, s = slide, r = rotate
