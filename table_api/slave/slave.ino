@@ -185,22 +185,11 @@ void loop() {
                 case translation: {
                     switch (calibration_step) {
                         case 0:
-                            digitalWrite(direction_pin, LOW);
+                            digitalWrite(direction_pin, HIGH);
                             analogWrite(pwm_pin, translation_calibration_speed);
                             ++calibration_step;
                             break;
                         case 1:
-                            if (digitalRead(inner_switch_pin) == LOW) {
-                                analogWrite(pwm_pin, 0);
-                                noInterrupts();
-                                pulses = 0;
-                                interrupts();
-                                digitalWrite(direction_pin, HIGH);
-                                analogWrite(pwm_pin, translation_calibration_speed);
-                                ++calibration_step;
-                            }
-                            break;
-                        case 2:
                             if (digitalRead(outer_switch_pin) == LOW) {
                                 analogWrite(pwm_pin, 0);
                                 noInterrupts();
@@ -211,9 +200,12 @@ void loop() {
                                 ++calibration_step;
                             }
                             break;
-                        case 3:
+                        case 2:
                             if (digitalRead(inner_switch_pin) == LOW) {
                                 analogWrite(pwm_pin, 0);
+                                noInterrupts();
+                                minimum_pulses = pulses;
+                                interrupts();
                                 ++calibration_step;
                             }
                             break;

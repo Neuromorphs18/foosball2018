@@ -9,7 +9,7 @@ enum state_type {
 
 /// constants
 const unsigned long frame_duration = 10; // time between I2C writes in ms
-const bool enabled[8] = {true, true, false, false, false, false, false, false}; // enabled motors
+const bool enabled[8] = {true, true, true, true, true, true, true, true}; // enabled motors
 const byte translation_calibration_speed = 60;
 
 /// state variables
@@ -100,8 +100,8 @@ void calibrate(bool force) {
     state_type states[8];
     for (byte index = 0; index < 8; ++index) {
         if (enabled[index]) {
-            byte message[3] = {0, 0};
-            write_to_slave(index, message, 3);
+            byte message[3] = {0, 0, 0};
+            write_to_slave(index, message, sizeof(message));
             if (force) {
                 states[index] = uncalibrated;
             } else {
@@ -114,8 +114,8 @@ void calibrate(bool force) {
             if (enabled[index * 2]) {
                 switch (states[index * 2]) {
                     case uncalibrated: {
-                        byte message[2] = {0};
-                        write_to_slave(index * 2, message, 2);
+                        byte message[2] = {0, 0};
+                        write_to_slave(index * 2, message, sizeof(message));
                         states[index * 2] = calibrating;
                         break;
                     }
@@ -123,16 +123,18 @@ void calibrate(bool force) {
                         read_from_slave(index * 2, &(states[index * 2]), nullptr, nullptr);
                         break;
                     case calibrated: {
-                        byte message[3] = {0, translation_calibration_speed};
-                        write_to_slave(index * 2, message, 3);
+                        {
+                            byte message[3] = {0, translation_calibration_speed};
+                            write_to_slave(index * 2, message, sizeof(message));
+                        }
                         if (enabled[index * 2 + 1]) {
                             switch (states[index * 2 + 1]) {
                                 case uncalibrated:
                                     uint16_t pulses;
                                     read_from_slave(index * 2, nullptr, &pulses, nullptr);
                                     if (pulses == 0) {
-                                        byte message[2] = {0};
-                                        write_to_slave(index * 2 + 1, message, 2);
+                                        byte message[2] = {0, 0};
+                                        write_to_slave(index * 2 + 1, message, sizeof(message));
                                         states[index * 2 + 1] = calibrating;
                                     }
                                     break;
