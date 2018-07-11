@@ -12,7 +12,7 @@ class Handler(object):
         sys.stdout.write('\r' + '-' * (100 - ratio) + '█' + '-' * ratio)
 
 handler = Handler()
-table = sensiball.Table(device='/dev/cu.usbmodemFA131')
+table = sensiball.Table(device='/dev/cu.usbmodem1421')
 table.add_handler(handler)
 
 while True:
