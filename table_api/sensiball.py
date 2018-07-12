@@ -12,7 +12,7 @@ class Table:
     def init(self, device):
         if self.sensiball_serial:
             raise Exception('already initialized')
-        self.sensiball_serial = serial.Serial(device, baudrate=115200, rtscts=True, timeout=None)
+        self.sensiball_serial = serial.Serial(device, baudrate=57600, rtscts=True, timeout=None)
         self.sensiball_serial.reset_input_buffer()
         self.handlers = []
         self.speeds = (0, 0, 0, 0, 0, 0, 0, 0)
@@ -29,9 +29,10 @@ class Table:
                     buffer = bytearray(10)
                     are_clockwise = 0
                     local_speeds = self.speeds
+                    print(local_speeds)
                     for index, speed in enumerate(local_speeds):
                         are_clockwise |= ((1 if speed > 0 else 0) << index)
-                        if abs(speed) > 255: 
+                        if abs(speed) > 255:
                             buffer[index + 2] = 255
                         else:
                             buffer[index + 2] = abs(speed)

@@ -24,8 +24,8 @@ enum state_type {
 /// configuration
 const motion_type motion = translation;
 const position_type position = goalie;
-const byte translation_calibration_speed = 60;
-const byte rotation_calibration_speed = 100;
+const byte translation_calibration_speed = 120;
+const byte rotation_calibration_speed = 120;
 
 /// pins and addresses declarations
 const int direction_pin = 8;
