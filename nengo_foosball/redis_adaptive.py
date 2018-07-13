@@ -6,6 +6,7 @@ import timeit
 import sys
 sys.path.insert(0, '../table_api')
 import sensiball
+import redis
 
 class TableInOut(object):
     def __init__(self):
@@ -14,7 +15,7 @@ class TableInOut(object):
         
     def handle_positions(self, positions):
         # map to -1,1
-        # print(positions)
+        print(positions)
         self.nengo_position = 2*(float(positions[0])/float(positions[1]))-1
 
         #tmp_now = timeit.default_timer()
@@ -43,10 +44,18 @@ def ard_output(t,x):
     table.set_speeds((x, 0, 0, 0, 0, 0, 0, 0))
     time.sleep(.001)
 
+db = redis.StrictRedis("10.162.177.1")
+db.set('pos', '0;0')
+
+def get_pos(t):
+    pos = db.get('pos').decode('utf-8').split(';')
+    return float(pos[1])-90
+
 model = nengo.Network()
 with model:
     # PD Control
-    desired = nengo.Node([0])
+    desired = nengo.Node(get_pos, size_out=1)
+    #desired = nengo.Node([0])
     derror = nengo.Ensemble(n_neurons=64,dimensions=1)
     error = nengo.Ensemble(n_neurons=64,dimensions=1)
     PD = nengo.Ensemble(n_neurons=64,dimensions = 1)
@@ -54,7 +63,7 @@ with model:
 
     position = nengo.Node(table_inout, size_in=0, size_out=1)
 
-    nengo.Connection(desired, error, transform=1/90, synapse=0.005)
+    nengo.Connection(desired, error, transform=-1/90, synapse=0.005)
     nengo.Connection(position, error, transform=-1, synapse=0.005)
     nengo.Connection(error, derror, transform=1, synapse=0.005)
     nengo.Connection(error, derror, transform=-1, synapse=0.01)
