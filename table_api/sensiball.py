@@ -134,7 +134,7 @@ class Sensiball:
                         self.prevPositions[i] = (s[0], s[1])
                     positions.append(self.prevPositions[i])
                 for handler in self.handlers:
-                    handler(positions)
+                    handler.handle_positions(positions)
 
                 # Print info
                 if self.printInfo:
