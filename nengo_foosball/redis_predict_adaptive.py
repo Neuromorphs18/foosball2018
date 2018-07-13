@@ -31,7 +31,7 @@ table = None
 table_dict = {}
 def on_start(sim):
     global table
-    table = sensiball.Table('/dev/cu.usbmodem1411')
+    table = sensiball.Table('/dev/cu.usbmodem1421')
     table_dict[table] = None
     table.add_handler(table_inout)
 
@@ -46,16 +46,44 @@ def ard_output(t,x):
 
 db = redis.StrictRedis("10.162.177.1")
 db.set('pos', '0;0')
+db.set('vel', '0;0')
 
 def get_pos(t):
     pos = db.get('pos').decode('utf-8').split(';')
-    return float(pos[1])-90
+    scale -1,1; flip
+    return [float(e) for e in pos]
+
+def get_vel(t):
+    vel = db.get('vel').decode('utf-8').split(';')
+    scale -1,1; flip
+    return [float(e) for e in vel]
+
+#load weights for prediction network
+dec = np.load('prediction_decoder_2Rows.npz')
+dec = dec['dec3']
 
 model = nengo.Network()
 with model:
+
+    # Prediction neurons
+    redis_pos = nengo.Node(get_pos, size_out=2) 
+    redis_vel = nengo.Node(get_vel, size_out=2)
+
+    desired = nengo.Node(None, size_in=2)
+
+    ens = nengo.Ensemble(n_neurons=2000, dimensions=4, neuron_type=nengo.LIFRate(), radius=2, seed=1)
+
+    nengo.Connection(redis_pos, ens[0:2])
+    nengo.Connection(redis_vel, ens[2:4])
+    nengo.Connection(ens.neurons, desired, transform=dec, synapse=None)
+
+    goalie = desired[0]
+    defenders = desired[1]
+
     # PD Control
-    desired = nengo.Node(get_pos, size_out=1)
+    #desired = nengo.Node(get_pos, size_out=1)
     #desired = nengo.Node([0])
+    
     derror = nengo.Ensemble(n_neurons=64,dimensions=1)
     error = nengo.Ensemble(n_neurons=64,dimensions=1)
     PD = nengo.Ensemble(n_neurons=64,dimensions = 1)
@@ -63,7 +91,7 @@ with model:
 
     position = nengo.Node(table_inout, size_in=0, size_out=1)
 
-    nengo.Connection(desired, error, transform=-1/90, synapse=0.005)
+    nengo.Connection(desired, error, transform=-1, synapse=0.005)
     nengo.Connection(position, error, transform=-1, synapse=0.005)
     nengo.Connection(error, derror, transform=1, synapse=0.005)
     nengo.Connection(error, derror, transform=-1, synapse=0.01)

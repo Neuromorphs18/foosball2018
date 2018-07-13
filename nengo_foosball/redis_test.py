@@ -14,8 +14,8 @@ def get_vel(t):
     vel = db.get('vel').decode('utf-8').split(';')
     return [float(e) for e in vel]
 
-dec = np.load('prediction_decoder.npz')
-dec = dec['dec']
+dec = np.load('prediction_decoder_2Rows.npz')
+dec = dec['dec3']
 
 model = nengo.Network()
 with model:
@@ -28,8 +28,8 @@ with model:
     
     def goalie_prediction(t,x):
         pass
-    f = nengo.Node(None, size_in=51)
-    
+    f = nengo.Node(None, size_in=dec.shape[0])
+
     ens = nengo.Ensemble(n_neurons=2000, dimensions=4, neuron_type=nengo.LIFRate(), radius=2, seed=1)
     conn = nengo.Connection(ens.neurons, f, transform=dec, synapse=None)
     nengo.Connection(pos, ens[0:2])
