@@ -10,7 +10,7 @@ enum state_type {
 /// constants
 const unsigned long frame_duration = 10; // time between I2C writes in ms
 const bool enabled[8] = {true, true, true, true, true, true, true, true}; // enabled motors
-const byte translation_calibration_speed = 60;
+const byte translation_calibration_speed = 120;
 
 /// state variables
 byte are_clockwise = 0;
@@ -165,14 +165,17 @@ void calibrate(bool force) {
 void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
-    Serial.begin(115200);
+    Serial.begin(57600);
     Wire.begin();
+    pinMode(SDA, INPUT);
+    pinMode(SCL, INPUT);
     calibrate(false);
 }
 
 void loop() {
     ++led_count;
-    digitalWrite(LED_BUILTIN, led_count > 32767 ? HIGH : LOW);
+    led_count = (led_count + 1) % 32768;
+    digitalWrite(LED_BUILTIN, led_count > 16383 ? HIGH : LOW);
 
     const unsigned long now = millis();
     if (now - previous_write >= frame_duration) {
@@ -180,11 +183,13 @@ void loop() {
         for (byte index = 0; index < 8; ++index) {
             byte serial_message[4] = {0xff, 0x7f, 0xff, 0x7f};
             if (enabled[index]) {
-                byte message[3] = {(are_clockwise >> index) & 1, speeds[index], 0};
-                write_to_slave(index, message, 3);
-                state_type state;
-                uint16_t pulses;
-                uint16_t maximum_pulses;
+                {
+                    byte message[3] = {(are_clockwise >> index) & 1, speeds[index], 0};
+                    write_to_slave(index, message, sizeof(message));
+                }
+                state_type state = uncalibrated;
+                uint16_t pulses = 32767;
+                uint16_t maximum_pulses = 32767;
                 read_from_slave(index, &state, &pulses, &maximum_pulses);
                 if (state == calibrated) {
                     serial_message[0] = pulses & 0xff;
@@ -195,7 +200,6 @@ void loop() {
             }
             Serial.write(serial_message, sizeof(serial_message));
         }
-        Serial.flush();
     }
     if (Serial.available()) {
         const byte serial_byte = Serial.read();

@@ -1,5 +1,22 @@
 import nengo
 import numpy as np
+import pygame
+import time
+
+WHITE = (255,255,255)
+GREEN = (0,171,93)
+BLACK = (0,0,0)
+GREY = (100,100,100)
+YELLOW = (255,255,0)
+DARK_YELLOW = (171, 142, 0)
+DARK_BLUE = (5,23,92)
+BLUE = (25,139,232)
+
+width = 800
+height = 400
+
+canvas = pygame.display.set_mode((width, height), 0, 32)
+
 
 class Player(object):
     def __init__(self, x, ys, max_y, color, goal_left):
@@ -16,6 +33,9 @@ class Player(object):
         self.kick_deg = 40
         self.rot_velocity = 0
         self.slide_velocity = 0
+        self.rot_off = 0
+        self.colors = [YELLOW, DARK_YELLOW] if self.color == "yellow" else [BLUE, DARK_BLUE]
+
         
     def slide(self, dt, velocity):
         self.slide_velocity = velocity
@@ -46,11 +66,14 @@ class Player(object):
         return (self.rot_off % 90)/90 * 20 * (int(self.rotate_offset > 180)*2 - 1)
         
     def __opacity(self):
-        if self.goal_left and self.rotate_offset > 0 and self.rotate_offset <= 180:
-            return 0.5 
-        elif not(self.goal_left) and self.rotate_offset > 180:
-            return 0.5
-        return 1 
+        if self.rotate_offset < self.kick_deg or self.rotate_offset > 270 - self.kick_deg:
+
+        #if self.goal_left and self.rotate_offset > 0 and self.rotate_offset <= 180:
+        #    return 0.5 
+        #elif not(self.goal_left) and self.rotate_offset > 180:
+        
+            return 1
+        return 0.5
         
     def svg(self):
         line_width=5
@@ -64,10 +87,24 @@ class Player(object):
         
         '''.format(x0=self.x-line_width/2, players=''.join(players), line_width=line_width, height=self.table.height)
 
+    def draw(self):
+        line_width = 5
+        pygame.draw.rect(canvas, GREY, [self.x-line_width/2, 0, line_width, self.table.height])
+
+        for yy in self.ys:
+            color = self.colors[0] if self.__opacity() == 1 else self.colors[1]
+            x = self.x - (self.radius//2)
+            pygame.draw.rect(canvas, color, [
+                self.x - max(self.__cx_off(), self.radius)//2, 
+                yy+self.offset - (self.radius//2),
+                self.__rx(),
+                self.radius,
+            ])
+
 class Foosball(object):
-    def __init__(self):
-        self.width = 800
-        self.height = 400
+    def __init__(self, draw=False):
+        self.width = width
+        self.height = height
         self.ball_radius = 12
                 
         self.players = []
@@ -109,6 +146,9 @@ class Foosball(object):
 
         self.reset()
 
+        if draw:
+            self.draw()
+
     def add_player(self, player):
         player.table = self
         self.players.append(player)
@@ -119,13 +159,12 @@ class Foosball(object):
 
     def reset_table(self):
         self.ball_pos = np.array([self.width/2, self.height/2])
-        self.ball_vel = np.random.uniform(-10, 10, 2) # ball velocity at reset
+        self.ball_vel = np.random.uniform(-100, 100, 2) # ball velocity at reset
         for p in self.players:
             p.reset_offset = 0
             p.slide_velocity = 0
             p.rotate_offset = 0 
             p.rot_velocity = 0
-
         
     def update(self, dt, slide):
         self.ball_pos += self.ball_vel*dt  
@@ -190,7 +229,34 @@ class Foosball(object):
         return template
 
     def draw(self):
-        pass
+           
+        canvas.fill(GREEN)
+
+        width=self.width 
+        height=self.height 
+        bx=self.ball_pos[0] 
+        by=self.ball_pos[1] 
+        ball_radius=self.ball_radius
+        goal2width=self.width-10
+        score2width=self.width-100
+        score0=int(self.score[0])
+        score1=int(self.score[1])
+        players=''.join([p.svg() for p in self.players])
+        goal_height=self.height/3
+
+        pygame.draw.rect(canvas, BLUE, [0, goal_height, 10, goal_height])
+        pygame.draw.rect(canvas, YELLOW, [goal2width, goal_height, 10, goal_height])
+
+        for p in self.players:
+            p.draw()
+
+        pygame.draw.circle(canvas, WHITE, (int(self.ball_pos[0]), int(self.ball_pos[1])), self.ball_radius)
+
+        for score, color, func in zip(self.score, [BLUE, YELLOW], [lambda x: 10 + 10*x, lambda x: self.width - 10*x - 10]):
+            for s in range(int(score)):
+                pygame.draw.circle(canvas, color, [func(s), 10], 5)
+
+        pygame.display.update()        
         
     def get_state(self):
         # b = blue, y = yellow, s = slide, r = rotate
@@ -212,8 +278,25 @@ class Foosball(object):
         ]"""
 
         return np.concatenate([[self.ball_pos[0], self.ball_vel[0], self.ball_pos[1], self.ball_vel[1]],
+                                    np.array([[p.offset, p.slide_velocity, p.rotate_offset, p.rot_velocity] for p in self.players]).flatten()
+                                ])
+
+        # NO rot knowledge
+
+        """        ball = [[self.ball_pos[0], self.ball_vel[0], self.ball_pos[1], self.ball_vel[1]]
+        player_slide = np.array([[p.offset, p.slide_velocity] for p in self.players]).flatten()
+        blue_slide = 
+        yellow = np.array([[p.offset, p.slide_velocity, p.rotate_offset, p.rot_velocity] for p in self.players[4:]]).flatten()
+
+        blue_state = np.concatenate([,
             np.array([[p.offset, p.slide_velocity, p.rotate_offset, p.rot_velocity] for p in self.players]).flatten()
         ])
+
+        yellow_state = np.concatenate([[self.ball_pos[0], self.ball_vel[0], self.ball_pos[1], self.ball_vel[1]],
+            np.array([[p.offset, p.slide_velocity, p.rotate_offset, p.rot_velocity] for p in self.players]).flatten()
+        ])
+
+        return blue_state, yellow_state"""
         
     def step(self, action_vector):
        
@@ -221,9 +304,6 @@ class Foosball(object):
         
         return self.get_state(), self.score, max(self.score) >= 10
 
-"""
 if __name__ == "__main__":
     f = Foosball()
-    f.update(0.01, np.ones(16))
-"""
 
