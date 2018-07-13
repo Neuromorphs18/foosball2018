@@ -54,7 +54,7 @@ with model:
 
     position = nengo.Node(table_inout, size_in=0, size_out=1)
 
-    nengo.Connection(desired, error, transform=1, synapse=0.005)
+    nengo.Connection(desired, error, transform=1/90, synapse=0.005)
     nengo.Connection(position, error, transform=-1, synapse=0.005)
     nengo.Connection(error, derror, transform=1, synapse=0.005)
     nengo.Connection(error, derror, transform=-1, synapse=0.01)
@@ -74,8 +74,8 @@ with model:
     nengo.Connection(position, adaptive[1])
     adapt_vis = nengo.Node(None, size_in=1)
     learn_conn = nengo.Connection(adaptive, adapt_vis, function=lambda x: 0, synapse=None)
-    learn_conn.learning_rule_type = nengo.PES(learning_rate=1e-4)
-    nengo.Connection(adapt_vis, motor, synapse=None)
+    learn_conn.learning_rule_type = nengo.PES(learning_rate=1e-5)
+    #nengo.Connection(adapt_vis, motor, synapse=None)
     nengo.Connection(PD, learn_conn.learning_rule, transform=-1)
     
     

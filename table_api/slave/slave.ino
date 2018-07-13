@@ -1,278 +1,409 @@
 #include <Wire.h>
 
-/// motion_type lists the motors roles.
-enum motion_type {
-    translation,
-    rotation,
-};
+//##################################################################
+// CONFIGURATION
+//##################################################################
+#define LED_FLASH_PERIOD_MS   1000
+#define SLAVE_ADDRESS         8           // 8/10/12/14 for Goalie/Defender/Midfield/Forward
+#define SLAVE_MODE            0           // 0/1 for Translation/Rotation
+#define TRANSLATION_CAL_SPEED 120
+#define ROTATION_CAL_SPEED    110
 
-/// position_type lists the players rows.
-enum position_type {
-    goalie,
-    defender,
-    midfield,
-    forward,
-};
+#define STATUS_OFFLINE        0x50
+#define STATUS_CRC_ERROR      0x51
+#define STATUS_UNCALIBRATED   0x52
+#define STATUS_CALIBRATED     0x53
 
-/// state_type represents the calibration status.
-enum state_type {
-    uncalibrated,
-    calibrating,
-    calibrated,
-};
+#define CMD_HALT              0xF0
+#define CMD_CALIBRATE         0xF1
+#define CMD_MOVE              0xF2
 
-/// configuration
-const motion_type motion = translation;
-const position_type position = goalie;
-const byte translation_calibration_speed = 120;
-const byte rotation_calibration_speed = 120;
+// Pins
+#define PIN_DIRECTION         8
+#define PIN_PWM               9
+#define PIN_OUTER_SWITCH      11
+#define PIN_INNER_SWITCH      12
+#define PIN_ENCODER_FORWARD   2
+#define PIN_ENCODER_BACKWARD  3
+#define PIN_VERTICAL_SWITCH   A0
 
-/// pins and addresses declarations
-const int direction_pin = 8;
-const int pwm_pin = 9;
-const int inner_switch_pin = 12;
-const int outer_switch_pin = 11;
-const int forward_encoder_pin = 2;
-const int backward_encoder_pin = 3;
-const int vertical_switch_pin = A0;
+//##################################################################
+// GLOBAL VARIABLES
+//##################################################################
+typedef enum
+{
+  STATE_UNCALIBRATED,
+  STATE_CALIBRATING,
+  STATE_CALIBRATED
+} state_t;
 
-/// state variables
-volatile state_type state = uncalibrated;
-byte calibration_step = 0;
-volatile int16_t minimum_pulses = 0;
-volatile int16_t maximum_pulses = 980;
-volatile int16_t pulses = 0;
-volatile bool is_clockwise = false;
-volatile byte speed = 0;
-unsigned int led_count = 0;
+// State variables
+volatile state_t state          = STATE_UNCALIBRATED;
+volatile int     minimum_pulses = 0;
+volatile int     maximum_pulses = 980;
+volatile int     pulses         = 0;
+volatile bool    clockwise      = false;
+volatile byte    speed          = 0;
 
-/// crc calculates the CRC for the given bytes.
-byte crc(const byte* message, byte size) {
+//##################################################################
+// INITIALISATION
+//##################################################################
+void setup()
+{
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(PIN_DIRECTION, OUTPUT);
+  pinMode(PIN_PWM, OUTPUT);
+  pinMode(PIN_ENCODER_FORWARD, INPUT);
+  pinMode(PIN_ENCODER_BACKWARD, INPUT);
+  pinMode(PIN_OUTER_SWITCH, INPUT_PULLUP);
+  pinMode(PIN_INNER_SWITCH, INPUT_PULLUP);
+  pinMode(PIN_VERTICAL_SWITCH, INPUT_PULLUP);
+
+  ledOn(true);
+  analogWrite(PIN_PWM, 0);
+
+  Wire.begin(SLAVE_ADDRESS + SLAVE_MODE);
+  Wire.setClock(10000);
+  Wire.onReceive(receive_event);
+  Wire.onRequest(request_event);
+
+  attachInterrupt(0, forward_change, CHANGE);
+  attachInterrupt(1, backward_change, CHANGE);
+}
+
+//##################################################################
+// MAIN LOOP
+//##################################################################
+void loop()
+{
+  static unsigned long  ledTimestamp    = 0;
+  static unsigned long  updateTimestamp = 0;
+  static bool           ledState        = true;
+  static byte           calState        = 0;
+  unsigned long         timeNow;
+
+  timeNow = millis();
+
+  ///////////////////////////////////////////////////
+  // Flash LED
+  ///////////////////////////////////////////////////
+  if ((timeNow - ledTimestamp) >= (LED_FLASH_PERIOD_MS/2))
+  {
+    ledTimestamp  = timeNow;
+    ledState      = !ledState;
+    ledOn(ledState);
+  }
+
+  ///////////////////////////////////////////////////
+  // State Machines
+  ///////////////////////////////////////////////////
+  switch (state)
+  {
+    case STATE_UNCALIBRATED:
+    {
+      break;
+    }
+
+    case STATE_CALIBRATING:
+    {
+      #if SLAVE_MODE == 0
+      switch (calState)
+      {
+        case 0:
+        {
+          digitalWrite(PIN_DIRECTION, HIGH);
+          analogWrite(PIN_PWM, TRANSLATION_CAL_SPEED);
+          calState++;
+          break;
+        }
+
+        case 1:
+        {
+          if (digitalRead(PIN_OUTER_SWITCH) == LOW)
+          {
+              analogWrite(PIN_PWM, 0);
+              noInterrupts();
+              maximum_pulses = pulses + 1;
+              interrupts();
+              digitalWrite(PIN_DIRECTION, LOW);
+              analogWrite(PIN_PWM, TRANSLATION_CAL_SPEED);
+              calState++;
+          }
+          break;
+        }
+
+        case 2:
+        {
+          if (digitalRead(PIN_INNER_SWITCH) == LOW)
+          {
+              analogWrite(PIN_PWM, 0);
+              noInterrupts();
+              minimum_pulses = pulses;
+              interrupts();
+              calState++;
+          }
+          break;
+        }
+
+        default:
+        {
+          calState  = 0;
+          state     = STATE_CALIBRATED;
+          break;
+        }
+      }
+      #else
+      // Forwards has a busted sensor, so ignore calibration
+      #if SLAVE_ADDRESS == 14
+      calState  = 0;
+      state     = STATE_CALIBRATED;
+      #else
+      switch (calState)
+      {
+        case 0:
+        {
+          digitalWrite(PIN_DIRECTION, HIGH);
+          analogWrite(PIN_PWM, ROTATION_CAL_SPEED);
+          calState++;
+          break;
+        }
+
+        case 1:
+        {
+          if (digitalRead(PIN_VERTICAL_SWITCH) == LOW)
+          {
+              analogWrite(PIN_PWM, 0);
+              noInterrupts();
+              pulses = 0;
+              interrupts();
+              calState++;
+          }
+          break;
+        }
+
+        default:
+        {
+          calState  = 0;
+          state     = STATE_CALIBRATED;
+          break;
+        }
+      }
+      #endif
+      #endif
+      break;
+    }
+
+    case STATE_CALIBRATED:
+    {
+      noInterrupts();
+      bool local_clockwise  = clockwise;
+      byte local_speed      = speed;
+      interrupts();
+
+      #if SLAVE_MODE == 0
+      if (digitalRead(PIN_INNER_SWITCH) == LOW)
+      {
+        noInterrupts();
+        minimum_pulses = pulses;
+        interrupts();
+        if (!local_clockwise)
+        {
+            local_speed = 0;
+        }
+      }
+      else if (digitalRead(PIN_OUTER_SWITCH) == LOW)
+      {
+        noInterrupts();
+        maximum_pulses = pulses + 1;
+        interrupts();
+        if (local_clockwise)
+        {
+            local_speed = 0;
+        }
+      }
+      else
+      {
+        if (pulses + 1 > maximum_pulses)
+        {
+            noInterrupts();
+            maximum_pulses = pulses + 1;
+            interrupts();
+        }
+        else if (pulses < minimum_pulses)
+        {
+            noInterrupts();
+            minimum_pulses = pulses;
+            interrupts();
+        }
+      }
+      #endif
+
+      digitalWrite(PIN_DIRECTION, local_clockwise ? HIGH : LOW);
+      analogWrite(PIN_PWM, local_speed);
+      break;
+    }
+  }
+}
+
+//##################################################################
+// INTERRUPTS
+//##################################################################
+// Forward_change is called when the forward encoder's value changes.
+void forward_change()
+{
+    if (digitalRead(PIN_ENCODER_BACKWARD) == 0)
+    {
+        if (digitalRead(PIN_ENCODER_FORWARD) == 0)
+        {
+            ++pulses;
+        }
+        else
+        {
+            --pulses;
+        }
+    }
+    else
+    {
+        if (digitalRead(PIN_ENCODER_FORWARD) == 0)
+        {
+            --pulses;
+        }
+        else
+        {
+            ++pulses;
+        }
+    }
+}
+
+// Backward_change is called when the backward encoder's value changes.
+void backward_change()
+{
+    if (digitalRead(PIN_ENCODER_FORWARD) == 0)
+    {
+        if (digitalRead(PIN_ENCODER_BACKWARD) == 0)
+        {
+            --pulses;
+        }
+        else
+        {
+            ++pulses;
+        }
+    }
+    else
+    {
+        if (digitalRead(PIN_ENCODER_BACKWARD) == 0)
+        {
+            ++pulses;
+        }
+        else
+        {
+            --pulses;
+        }
+    }
+}
+
+// Receive_event is called when the I2C master sends data.
+void receive_event(int len)
+{
+    byte buffer[4];
+    byte cnt = 0;
+
+    while (Wire.available())
+    {
+      byte c = Wire.read();
+      if (cnt < sizeof(buffer))
+      {
+        buffer[cnt++] = c;
+      }
+    }
+
+    if (crcIsValid(buffer, 3, buffer[3]))
+    {
+      switch (buffer[0])
+      {
+        case CMD_HALT:
+        {
+          if (state == STATE_CALIBRATING)
+          {
+            state = STATE_UNCALIBRATED;
+          }
+          clockwise = false;
+          speed     = 0;
+          break;
+        }
+
+        case CMD_CALIBRATE:
+        {
+          state = STATE_CALIBRATING;
+          break;
+        }
+
+        case CMD_MOVE:
+        {
+          if (state == STATE_CALIBRATING)
+          {
+            state = STATE_UNCALIBRATED;
+          }
+          clockwise = (buffer[1] != 0);
+          speed     = buffer[2];
+          break;
+        }
+
+        default:
+        {
+          break;
+        }
+      }
+    }
+}
+
+// Request_event is called when the I2C master requests data.
+void request_event()
+{
+  byte buffer[6];
+  const int norm_pulses      = pulses - minimum_pulses;
+  const int norm_max_pulses  = maximum_pulses - minimum_pulses;
+
+  buffer[0] = (byte)( norm_pulses           & 0xFF);
+  buffer[1] = (byte)((norm_pulses     >> 8) & 0xFF);
+  buffer[2] = (byte)( norm_max_pulses       & 0xFF);
+  buffer[3] = (byte)((norm_max_pulses >> 8) & 0xFF);
+  buffer[4] = (state == STATE_CALIBRATED) ? STATUS_CALIBRATED : STATUS_UNCALIBRATED;
+  buffer[5] = crc(buffer, 5);
+
+  Wire.write(buffer, 6);
+}
+
+//##################################################################
+// HELPER FUNCTIONS
+//##################################################################
+void ledOn(bool on)
+{
+  digitalWrite(LED_BUILTIN, on);
+}
+
+byte crc(const byte * message, byte len)
+{
     byte crc8 = 0x00;
-    while (size--) {
-        byte extract = *message++;
-        for (byte index = 8; index != 0; --index) {
-            byte sum = (crc8 ^ extract) & 0x01;
+
+    while (len--)
+    {
+        byte val = *message++;
+        for (byte i = 0; i < 8; i++)
+        {
+            byte sum = (crc8 ^ val) & 0x01;
             crc8 >>= 1;
-            if (sum > 0) {
+            if (sum > 0)
+            {
                 crc8 ^= 0x8C;
             }
-            extract >>= 1;
+            val >>= 1;
         }
     }
     return crc8;
 }
 
-/// is_crc_valid validates the given message with the CRC as last byte.
-bool is_crc_valid(const byte* message, byte size) {
-    return message[size - 1] == crc(message, size - 1);
-}
-
-/// receive_event is called when the I2C master sends data.
-void handle_receive_event(int bytes_received) {
-    byte wire_bytes[3];
-    byte wire_bytes_index = 0;
-    while (Wire.available()) {
-        if (wire_bytes_index < sizeof(wire_bytes)) {
-            wire_bytes[wire_bytes_index] = Wire.read();
-            ++wire_bytes_index;
-        }
-    }
-    if (wire_bytes_index == 2 && is_crc_valid(wire_bytes, 2)) {
-        state = calibrating;
-    } else if (wire_bytes_index == 3 && is_crc_valid(wire_bytes, 3)) {
-        is_clockwise = (wire_bytes[0] == 1);
-        speed = wire_bytes[1];
-    }
-}
-
-/// handle_request_event is called when the I2C master requests data.
-void handle_request_event() {
-    const uint16_t normalized_pulses = pulses - minimum_pulses;
-    const uint16_t normalized_maximum_pulses = maximum_pulses - minimum_pulses;
-    byte message[6] = {
-        state,
-        normalized_pulses & 0xff,
-        (normalized_pulses >> 8) & 0xff,
-        normalized_maximum_pulses & 0xff,
-        (normalized_maximum_pulses >> 8) & 0xff,
-    };
-    message[5] = crc(message, 5);
-    Wire.write(message, sizeof(message));
-}
-
-/// forward_change is called when the forward encoder's value changes.
-void forward_change() {
-    if (digitalRead(backward_encoder_pin) == 0) {
-        if (digitalRead(forward_encoder_pin) == 0) {
-            ++pulses;
-        } else {
-            --pulses;
-        }
-    } else {
-        if (digitalRead(forward_encoder_pin) == 0) {
-            --pulses;
-        } else {
-            ++pulses;
-        }
-    }
-}
-
-/// backward_change is called when the backward encoder's value changes.
-void backward_change() {
-    if(digitalRead(forward_encoder_pin) == 0) {
-        if (digitalRead(backward_encoder_pin) == 0) {
-            --pulses;
-        } else {
-            ++pulses;
-        }
-    } else {
-        if (digitalRead(backward_encoder_pin) == 0) {
-            ++pulses;
-        } else {
-            --pulses;
-        }
-    }
-}
-
-/// setup runs once on boot.
-void setup() {
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HIGH);
-    pinMode(direction_pin, OUTPUT);
-    pinMode(forward_encoder_pin, INPUT);
-    pinMode(backward_encoder_pin, INPUT);
-    attachInterrupt(0, forward_change, CHANGE);
-    attachInterrupt(1, backward_change, CHANGE);
-    switch (position) {
-        case goalie:
-            Wire.begin(8 + (motion == translation ? 0 : 1));
-            break;
-        case defender:
-            Wire.begin(10 + (motion == translation ? 0 : 1));
-            break;
-        case midfield:
-            Wire.begin(12 + (motion == translation ? 0 : 1));
-            break;
-        case forward:
-            Wire.begin(14 + (motion == translation ? 0 : 1));
-            break;
-    }
-    Wire.onReceive(handle_receive_event);
-    Wire.onRequest(handle_request_event);
-    switch (motion) {
-        case translation: {
-            pinMode(inner_switch_pin, INPUT_PULLUP);
-            pinMode(outer_switch_pin, INPUT_PULLUP);
-            break;
-        }
-        case rotation: {
-            pinMode(vertical_switch_pin, INPUT_PULLUP);
-            break;
-        }
-    }
-}
-
-void loop() {
-    ++led_count;
-    digitalWrite(LED_BUILTIN, led_count > 32767 ? HIGH : LOW);
-
-    switch (state) {
-        case uncalibrated:
-            break;
-        case calibrating:
-            switch (motion) {
-                case translation: {
-                    switch (calibration_step) {
-                        case 0:
-                            digitalWrite(direction_pin, HIGH);
-                            analogWrite(pwm_pin, translation_calibration_speed);
-                            ++calibration_step;
-                            break;
-                        case 1:
-                            if (digitalRead(outer_switch_pin) == LOW) {
-                                analogWrite(pwm_pin, 0);
-                                noInterrupts();
-                                maximum_pulses = pulses + 1;
-                                interrupts();
-                                digitalWrite(direction_pin, LOW);
-                                analogWrite(pwm_pin, translation_calibration_speed);
-                                ++calibration_step;
-                            }
-                            break;
-                        case 2:
-                            if (digitalRead(inner_switch_pin) == LOW) {
-                                analogWrite(pwm_pin, 0);
-                                noInterrupts();
-                                minimum_pulses = pulses;
-                                interrupts();
-                                ++calibration_step;
-                            }
-                            break;
-                        default:
-                            calibration_step = 0;
-                            state = calibrated;
-                    }
-                    break;
-                }
-                case rotation: {
-                    switch (calibration_step) {
-                        case 0:
-                            digitalWrite(direction_pin, HIGH);
-                            analogWrite(pwm_pin, rotation_calibration_speed);
-                            ++calibration_step;
-                            break;
-                        case 1:
-                            if (digitalRead(vertical_switch_pin) == LOW) {
-                                analogWrite(pwm_pin, 0);
-                                noInterrupts();
-                                pulses = 0;
-                                interrupts();
-                                ++calibration_step;
-                            }
-                            break;
-                        default:
-                            calibration_step = 0;
-                            state = calibrated;
-                    }
-                    break;
-                }
-            }
-            break;
-        case calibrated:
-            noInterrupts();
-            const bool local_is_clockwise = is_clockwise;
-            byte local_speed = speed;
-            interrupts();
-            if (motion == translation) {
-                if (digitalRead(inner_switch_pin) == LOW) {
-                    noInterrupts();
-                    minimum_pulses = pulses;
-                    interrupts();
-                    if (!local_is_clockwise) {
-                        local_speed = 0;
-                    }
-                } else if (digitalRead(outer_switch_pin) == LOW) {
-                    noInterrupts();
-                    maximum_pulses = pulses + 1;
-                    interrupts();
-                    if (local_is_clockwise) {
-                        local_speed = 0;
-                    }
-                } else {
-                    if (pulses + 1 > maximum_pulses) {
-                        noInterrupts();
-                        maximum_pulses = pulses + 1;
-                        interrupts();
-                    } else if (pulses < minimum_pulses) {
-                        noInterrupts();
-                        minimum_pulses = pulses;
-                        interrupts();
-                    }
-                }
-            }
-            digitalWrite(direction_pin, local_is_clockwise ? HIGH : LOW);
-            analogWrite(pwm_pin, local_speed);
-            break;
-    }
+bool crcIsValid(const byte * message, byte msgLen, byte crcVal)
+{
+    return crcVal == crc(message, msgLen);
 }
