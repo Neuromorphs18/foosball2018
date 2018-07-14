@@ -8,7 +8,7 @@ SERIAL_SOF          = 0xAA
 MSG_HALT            = 0xC0
 MSG_CALIBRATE       = 0xC1
 MSG_SET_SPEEDS      = 0xC2
-MSG_UPDATE          = 0xCA
+MSG_POSITION        = 0xCA
 STATUS_OFFLINE      = 0x50
 STATUS_CRC_ERROR    = 0x51
 STATUS_UNCALIBRATED = 0x52
@@ -16,27 +16,43 @@ STATUS_CALIBRATED   = 0x53
 
 class Sensiball:
     def __init__(self):
-        self.device         = None
+        self.device1        = None
+        self.device2        = None
         self.handlers       = []
         self.running        = False
         self.prevPositions  = [(0,0),(0,0),(0,0),(0,0),(0,0),(0,0),(0,0),(0,0)]
         self.printInfo      = False
+        self.dataReady1     = False
+        self.dataReady2     = False
+        self.status         = [(0,0,STATUS_OFFLINE)]*8
 
-    def open(self, port, baud):
-        if self.device:
-            raise Exception('Already open')
-        self.device = serial.Serial(port, baudrate=baud, timeout=None)
-        self.device.reset_input_buffer()
+    def open(self, port1, port2, baud):
         self.running = True
-        self.communication_thread = threading.Thread(target=self._reader)
-        self.communication_thread.daemon = True
-        self.communication_thread.start()
+        self.dataHandleLock = threading.Lock()
+        if port1:
+            self.device1 = serial.Serial(port1, baudrate=baud, timeout=None)
+            self.device1.reset_input_buffer()
+            self.communication_thread1 = threading.Thread(target=self._reader1)
+            self.communication_thread1.daemon = True
+            self.communication_thread1.start()
+        if port2:
+            self.device2 = serial.Serial(port2, baudrate=baud, timeout=None)
+            self.device2.reset_input_buffer()
+            self.communication_thread2 = threading.Thread(target=self._reader2)
+            self.communication_thread2.daemon = True
+            self.communication_thread2.start()
 
     def close(self):
         self.running = False
-        self.communication_thread.join()
         self.send_halt()
-        self.device.close()
+        if self.device1:
+            self.communication_thread1.join()
+            self.device1.close()
+            self.device1 = None
+        if self.device2:
+            self.communication_thread2.join()
+            self.device2.close()
+            self.device2 = None
 
     def enable_printout(self, en):
         self.printInfo = en
@@ -56,14 +72,22 @@ class Sensiball:
     def send_halt(self):
         msg = [SERIAL_SOF, MSG_HALT, 4]
         msg.append(self._crc(msg))
-        self.device.write(bytearray(msg))
-        self.device.flush()
+        if self.device1:
+            self.device1.write(bytearray(msg))
+            self.device1.flush()
+        if self.device2:
+            self.device2.write(bytearray(msg))
+            self.device2.flush()
 
     def send_calibrate(self):
         msg = [SERIAL_SOF, MSG_CALIBRATE, 4]
         msg.append(self._crc(msg))
-        self.device.write(bytearray(msg))
-        self.device.flush()
+        if self.device1:
+            self.device1.write(bytearray(msg))
+            self.device1.flush()
+        if self.device2:
+            self.device2.write(bytearray(msg))
+            self.device2.flush()
         time.sleep(5)
 
     def send_speeds(self, speeds):
@@ -90,20 +114,29 @@ class Sensiball:
             else:
                 spd.append(abs(speed))
 
-        msg  = [SERIAL_SOF, MSG_SET_SPEEDS, 13, clockwise]
-        msg += spd
-        msg.append(self._crc(msg))
-        self.device.write(bytearray(msg))
-        self.device.flush()
+        
+        if self.device1:
+            msg  = [SERIAL_SOF, MSG_SET_SPEEDS, 9, (clockwise & 0x0F)]
+            msg += spd[0:4]
+            msg.append(self._crc(msg))
+            self.device1.write(bytearray(msg))
+            self.device1.flush()
+        if self.device2:
+            msg  = [SERIAL_SOF, MSG_SET_SPEEDS, 9, ((clockwise >> 4) & 0x0F)]
+            msg += spd[4:8]
+            msg.append(self._crc(msg))
+            print(msg)
+            self.device2.write(bytearray(msg))
+            self.device2.flush()
 
-    def _reader(self):
+    def _reader1(self):
         msg = []
         while self.running:
-            msg.append(ord(self.device.read()))
-
+            msg.append(ord(self.device1.read()))
+            
             # Message must start with SOF character
             while (len(msg) > 0) and (msg[0] != SERIAL_SOF):
-                del msg[0]
+                del msg[0]                
 
             # Message must be at least 4 bytes
             if len(msg) < 4:
@@ -122,40 +155,109 @@ class Sensiball:
             # Process messages
             msgType = msg[1]
 
-            if (msgType == MSG_UPDATE) and (msgLen == 44):
-                status = []
-                for i in range(3,43,5):
-                    status.append(struct.unpack('hhB', bytes(msg[i:i+5])))
+            if (msgType == MSG_POSITION) and (msgLen == 24):
+                with self.dataHandleLock:
+                    for i in range(0,4):
+                        idx = 3 + i*5
+                        self.status[i] = struct.unpack('hhB', bytes(msg[idx:idx+5]))
+                    
+                    if not self.device2 or self.dataReady2:
+                        # Update handlers
+                        positions = []
+                        for i, s in enumerate(self.status):
+                            if s[2] == STATUS_CALIBRATED:
+                                self.prevPositions[i] = (s[0], s[1])
+                            positions.append(self.prevPositions[i])
+                        for handler in self.handlers:
+                            handler(positions)
 
-                # Update handlers
-                positions = []
-                for i, s in enumerate(status):
-                    if s[2] == STATUS_CALIBRATED:
-                        self.prevPositions[i] = (s[0], s[1])
-                    positions.append(self.prevPositions[i])
-                for handler in self.handlers:
-                    handler.handle_positions(positions)
+                        # Print info
+                        if self.printInfo:
+                            txt = ""
+                            for s in self.status:
+                                if s[2] == STATUS_OFFLINE:      txt += "offline"
+                                if s[2] == STATUS_CRC_ERROR:    txt += "  error"
+                                if s[2] == STATUS_UNCALIBRATED: txt += "  uncal"
+                                if s[2] == STATUS_CALIBRATED:   txt += "    cal"
+                                txt += str.format(":{0:+06}:{1:+06} ", s[0], s[1])
+                            print(txt[:-1])
 
-                # Print info
-                if self.printInfo:
-                    txt = ""
-                    for s in status:
-                        if s[2] == STATUS_OFFLINE:      txt += "     offline"
-                        if s[2] == STATUS_CRC_ERROR:    txt += "   CRC error"
-                        if s[2] == STATUS_UNCALIBRATED: txt += "uncalibrated"
-                        if s[2] == STATUS_CALIBRATED:   txt += "  calibrated"
-                        txt += str.format(":{0:+05}:{1:+05} ", s[0], s[1])
-                    print(txt[:-1])
-
+                        self.dataReady1 = False
+                        self.dataReady2 = False
+                    else:
+                        self.dataReady1 = True
             else:
-                raise ValueError("Invalid message received [code: {0:02X} length: {1}".format(msgType, msgLen))
+                raise ValueError("Invalid message received from device 1 [code: {0:02X} length: {1}]".format(msgType, msgLen))
+
+            del msg[:]
+
+    def _reader2(self):
+        msg = []
+        while self.running:
+            msg.append(ord(self.device2.read()))
+
+            # Message must start with SOF character
+            while (len(msg) > 0) and (msg[0] != SERIAL_SOF):
+                del msg[0]                
+            
+            # Message must be at least 4 bytes
+            if len(msg) < 4:
+                continue
+
+            # Wait to receive entire message (including CRC)
+            msgLen = msg[2]
+            if len(msg) < msgLen:
+                continue
+
+            # Verify integrity of message
+            if msg[-1] != self._crc(msg[:-1]):
+                del msg[0]
+                continue
+
+            # Process messages
+            msgType = msg[1]
+
+            if (msgType == MSG_POSITION) and (msgLen == 24):
+                
+                with self.dataHandleLock:
+                    for i in range(0,4):
+                        idx = 3 + i*5
+                        self.status[i+4] = struct.unpack('hhB', bytes(msg[idx:idx+5]))
+    
+                    if not self.device1 or self.dataReady1:
+                        # Update handlers
+                        positions = []
+                        for i, s in enumerate(self.status):
+                            if s[2] == STATUS_CALIBRATED:
+                                self.prevPositions[i] = (s[0], s[1])
+                            positions.append(self.prevPositions[i])
+                        for handler in self.handlers:
+                            handler(positions)
+
+                        # Print info
+                        if self.printInfo:
+                            txt = ""
+                            for s in self.status:
+                                if s[2] == STATUS_OFFLINE:      txt += "offline"
+                                if s[2] == STATUS_CRC_ERROR:    txt += "  error"
+                                if s[2] == STATUS_UNCALIBRATED: txt += "  uncal"
+                                if s[2] == STATUS_CALIBRATED:   txt += "    cal"
+                                txt += str.format(":{0:+05}:{1:+05} ", s[0], s[1])
+                            print(txt[:-1])
+
+                        self.dataReady1 = False
+                        self.dataReady2 = False
+                    else:
+                        self.dataReady2 = True
+            else:
+                raise ValueError("Invalid message received from device 2 [code: {0:02X} length: {1}]".format(msgType, msgLen))
 
             del msg[:]
 
     def _crc(self, msg):
         crc8 = 0x00
-
-        for i in range(len(msg)):
+        
+        for i in range(len(msg)): 
             val = msg[i]
             for b in range(8):
                 sum = (crc8 ^ val) & 0x01
