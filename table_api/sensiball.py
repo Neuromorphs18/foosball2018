@@ -242,7 +242,7 @@ class Sensiball:
                                 if s[2] == STATUS_CRC_ERROR:    txt += "  error"
                                 if s[2] == STATUS_UNCALIBRATED: txt += "  uncal"
                                 if s[2] == STATUS_CALIBRATED:   txt += "    cal"
-                                txt += str.format(":{0:+05}:{1:+05} ", s[0], s[1])
+                                txt += str.format(":{0:+06}:{1:+06} ", s[0], s[1])
                             print(txt[:-1])
 
                         self.dataReady1 = False
