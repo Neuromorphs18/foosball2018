@@ -3,10 +3,11 @@ from __future__ import division
 import copy
 import numpy as np
 import time
+import random
 
 class Agent0(object):
 
-    def __init__(self, env, goal_left, recursion_depth=3):
+    def __init__(self, env, goal_left, recursion_depth=3, randomness=True):
         """
         env: should be Foosball environment object.
         goal_left: True if player goal is on left side (note sure).
@@ -15,6 +16,7 @@ class Agent0(object):
         self.env = env
         self.goal_left = goal_left
         self.recursion_depth = recursion_depth
+        self.randomness = randomness
         # get wall lines and bounds.
         self.upper_bound = self.env.ball_radius
         self.lower_bound = self.env.height - self.env.ball_radius
@@ -146,6 +148,8 @@ class Agent0(object):
                     self.target_positions[idx] = intersection[0] # set y position as target.
                 else: # ball heading away from our goal.
                     self.target_positions[idx] = intersection[0] + 200.0/len(self.players[idx].ys) # move intersecting players out of the way.
+        if self.randomness:
+            self.target_positions = [None if pos is None else (pos + (random.random()-0.5)*20.0) for pos in self.target_positions]
         # ---------------------------------------------------------
         move = self.servo_players()
         return move
