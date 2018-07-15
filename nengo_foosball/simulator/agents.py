@@ -6,12 +6,15 @@ import time
 
 class Agent0(object):
 
-    def __init__(self, env, goal_left):
+    def __init__(self, env, goal_left, recursion_depth=3):
         """
         env: should be Foosball environment object.
-        goal_left: True if player goal is on left side (currently team "yellow")
+        goal_left: True if player goal is on left side (note sure).
+        recursion_depth: How many wall bounces into the future to consider.
         """
         self.env = env
+        self.goal_left = goal_left
+        self.recursion_depth = recursion_depth
         # get wall lines and bounds.
         self.upper_bound = self.env.ball_radius
         self.lower_bound = self.env.height - self.env.ball_radius
@@ -78,7 +81,7 @@ class Agent0(object):
 
         Note: ^^^ predicted time not yet implemented.
         """
-        if rec_depth >= 3: # recursion depth exceeded.
+        if rec_depth >= self.recursion_depth: # recursion depth exceeded.
             print('Warning: recursion depth exceeded.')
             return [None, None, None, None]
         # Calculate ball vector line from position and velocity
@@ -118,8 +121,8 @@ class Agent0(object):
                 positions = [y + self.players[idx].offset for y in self.players[idx].ys]
                 candidate_ys = [idx_ for idx_, y in enumerate(self.players[idx].ys) if target_y >= y and target_y <= y + self.players[idx].max_y]
                 if len(candidate_ys) > 0:
-                    position = positions[candidate_ys[0]] # just select the first guy
-                    # ^^^ TODO Selecting first guy is not optimal. Should select the closest one.
+                    ordered = sorted([(abs(positions[idx_]-target_y), idx_) for idx_ in candidate_ys])
+                    position = positions[ordered[0][1]] # Select the closest guy.
                     if position > target_y + 1.0 and self.players[idx].offset > 0:
                         return moves[idx][0] # move up
                     elif position < target_y - 1.0 and self.players[idx].offset < self.players[idx].max_y:
@@ -138,11 +141,11 @@ class Agent0(object):
         for idx, intersection in enumerate(player_intersections):
             if intersection is not None:
                 (y, moving_right, ts) = intersection
-                if moving_right: # ball heading right, which is usually towards our goal.
+                if moving_right == self.goal_left: # Slightly confusing.
                     # move intersecting players into the path of the ball.
                     self.target_positions[idx] = intersection[0] # set y position as target.
                 else: # ball heading away from our goal.
-                    self.target_positions[idx] = intersection[0] + 40.0 # move intersecting players out of the way.
+                    self.target_positions[idx] = intersection[0] + 200.0/len(self.players[idx].ys) # move intersecting players out of the way.
         # ---------------------------------------------------------
         move = self.servo_players()
         return move
