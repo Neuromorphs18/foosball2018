@@ -8,6 +8,7 @@ SERIAL_SOF          = 0xAA
 MSG_HALT            = 0xC0
 MSG_CALIBRATE       = 0xC1
 MSG_SET_SPEEDS      = 0xC2
+MSG_KICK            = 0xC3
 MSG_POSITION        = 0xCA
 STATUS_OFFLINE      = 0x50
 STATUS_CRC_ERROR    = 0x51
@@ -114,7 +115,6 @@ class Sensiball:
             else:
                 spd.append(abs(speed))
 
-        
         if self.device1:
             msg  = [SERIAL_SOF, MSG_SET_SPEEDS, 9, (clockwise & 0x0F)]
             msg += spd[0:4]
@@ -124,6 +124,28 @@ class Sensiball:
         if self.device2:
             msg  = [SERIAL_SOF, MSG_SET_SPEEDS, 9, ((clockwise >> 4) & 0x0F)]
             msg += spd[4:8]
+            msg.append(self._crc(msg))
+            self.device2.write(bytearray(msg))
+            self.device2.flush()
+
+    def send_kick(self, position):
+        """
+        position = 0, 1, 2 or 3
+            0 => Goalie
+            1 => Defender
+            2 => Midfield
+            3 => Forward
+        """
+        if position not in [0,1,2,3]:
+            raise ValueError('Invalid position specified for kick')
+
+        if   self.device1 and position in [0,1]:
+            msg  = [SERIAL_SOF, MSG_KICK, 5, position]
+            msg.append(self._crc(msg))
+            self.device1.write(bytearray(msg))
+            self.device1.flush()
+        elif self.device2 and position in [2,3]:
+            msg  = [SERIAL_SOF, MSG_KICK, 5, position-2]
             msg.append(self._crc(msg))
             print(msg)
             self.device2.write(bytearray(msg))
