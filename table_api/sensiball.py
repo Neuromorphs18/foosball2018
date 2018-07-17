@@ -8,7 +8,8 @@ SERIAL_SOF          = 0xAA
 MSG_HALT            = 0xC0
 MSG_CALIBRATE       = 0xC1
 MSG_SLIDE           = 0xC2
-MSG_KICK            = 0xC3
+MSG_ROTATE          = 0xC3
+MSG_KICK            = 0xC4
 MSG_CAL_DONE        = 0xCA
 MSG_POSITION        = 0xCB
 STATUS_OFFLINE      = 0x50
@@ -125,6 +126,29 @@ class Sensiball:
             self.device1.flush()
         elif self.device2 and player in [2,3]:
             msg  = [SERIAL_SOF, MSG_SLIDE, 7, player-2, position & 0xFF, (position >> 8) & 0xFF]
+            msg.append(self._crc(msg))
+            self.device2.write(bytearray(msg))
+            self.device2.flush()
+
+    def rotate(self, player, position):
+        """
+        Rotate player to position.
+        player = 0, 1, 2 or 3
+                0 => Goalie
+                1 => Defender
+                2 => Midfield
+                3 => Forward
+        """
+        if player not in [0,1,2,3]:
+            raise ValueError('Invalid player specified for rotate')
+
+        if   self.device1 and player in [0,1]:
+            msg  = [SERIAL_SOF, MSG_ROTATE, 7, player, position & 0xFF, (position >> 8) & 0xFF]
+            msg.append(self._crc(msg))
+            self.device1.write(bytearray(msg))
+            self.device1.flush()
+        elif self.device2 and player in [2,3]:
+            msg  = [SERIAL_SOF, MSG_ROTATE, 7, player-2, position & 0xFF, (position >> 8) & 0xFF]
             msg.append(self._crc(msg))
             self.device2.write(bytearray(msg))
             self.device2.flush()
