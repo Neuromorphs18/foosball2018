@@ -10,8 +10,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import itertools
 
-from old_environment import Foosball
+from environment import Foosball
 
 class ReplayMemory(object):
     def __init__(self, capacity):
@@ -36,14 +37,18 @@ class DQN_yellow(nn.Module):
     def __init__(self):
         super(DQN_yellow, self).__init__()
         self.l1 = nn.Linear(6, 250)
-        self.goalie = nn.Linear(250, 3)
-        self.defend = nn.Linear(250, 3)
-        self.midfield = nn.Linear(250, 3)
-        self.striker = nn.Linear(250, 3)
+        self.l2 = nn.Linear(250, 250)
+        """self.goalie = nn.Linear(250, 4)
+        self.defend = nn.Linear(250, 4)
+        self.midfield = nn.Linear(250, 4)
+        self.striker = nn.Linear(250, 4)
+        """
+        self.head = nn.Linear(250, len(ACTIONS))
 
     def forward(self, x):
         x = F.relu(self.l1(x))
-        return self.goalie(x), self.defend(x), self.midfield(x), self.striker(x)
+        x = F.relu(self.l2(x))
+        return self.head(x) #self.goalie(x), self.defend(x), self.midfield(x), self.striker(x)
 
 def select_action(state, model):
     global steps_done
@@ -52,15 +57,16 @@ def select_action(state, model):
         math.exp(-1. * steps_done / EPS_DECAY)
     steps_done += 1
     if sample > eps_threshold:
-        inp = torch.Tensor(state, device=device).cuda()
+        inp = torch.Tensor(state, device=device)
+        if torch.cuda.is_available():
+            inp = inp.cuda()
         with torch.no_grad():
-            return F.softmax(torch.stack(model(inp)), dim=1)
+            return F.softmax(model(inp).unsqueeze(0)).max(1)[0]
     else:
-        return torch.tensor([[random.randrange(3)] for x in range(4)], device=device, dtype=torch.long)
+        return torch.tensor([[random.randrange(len(ACTIONS))]], device=device, dtype=torch.long)
 
 
 def optimize_model(color):
-
     memory = blue_memory if color == "blue" else yellow_memory
 
     if len(memory) < BATCH_SIZE:
@@ -88,10 +94,11 @@ def optimize_model(color):
     state_action_values = policy_net(state_batch).gather(1, action_batch) #MRED
 
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
+
     next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach() #MRED
 
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
-
+    
     loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
 
     # Optimize the model
@@ -105,7 +112,7 @@ def optimize_model(color):
 if __name__ == "__main__":
     draw = False
 
-    env = Foosball(draw=draw)
+    env = Foosball(display=draw)
 
     # if gpu is to be used
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -120,6 +127,24 @@ if __name__ == "__main__":
     EPS_END = 0.05
     EPS_DECAY = 200
     TARGET_UPDATE = 10
+
+    ACTIONS = [
+        [1, 0, 0, 0],
+        [2, 0, 0, 0],
+        [3, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 2, 0, 0],
+        [0, 3, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 2, 0],
+        [0, 0, 3, 0],
+        [0, 0, 0, 1],
+        [0, 0, 0, 2],
+        [0, 0, 0, 3],
+        [0, 0, 0, 0],
+    ]
+
+    [torch.Tensor(x, device=device) for x in ACTIONS]
 
     yellow_policy_net = DQN_yellow().to(device)
     yellow_target_net = DQN_yellow().to(device)
@@ -144,27 +169,27 @@ if __name__ == "__main__":
         # Initialize the environment and state
         env.reset()
 
-        state, acttime = env.get_state()
-        all_actions = [(np.array(([0]* (4+4*4+4*4) + [acttime])))]
+        state = env.get_state()
 
         state = state / 1000 # scale by 1000 for NN
-
-        old_rewards = [0,0]
 
         for t in count():
             # Select and perform an action
 
-            action = select_action(state, yellow_policy_net)
+            print(select_action(state, yellow_policy_net))
+            act_int = select_action(state, yellow_policy_net)
+            action = ACTIONS[int(act_int.squeeze().item())]
 
             next_state, yreward, done, score = env.step(action)
 
-            all_actions.append(np.concatenate([action, np.array([acttime])]))
             next_state /= 1000
+
+            print(torch.Tensor([action], device=device).long())
 
             yellow_memory.push(
                 torch.Tensor(state, device=device).unsqueeze(0),
-                action,
-                torch.Tensor(yellow(next_state), device=device).unsqueeze(0),
+                torch.Tensor([act_int], device=device).long().unsqueeze(0),
+                torch.Tensor(next_state, device=device).unsqueeze(0),
                 torch.Tensor([yreward], device=device)
             )
 
@@ -180,7 +205,7 @@ if __name__ == "__main__":
             if done:
                 if score[0] > score[1]:
                     wins[0] += 1
-                else
+                else:
                     wins[1] += 1
                 episode_durations.append(t + 1)
                 print("episode {}, score [B,Y] {}, dur {}".format(i_episode, reward, episode_durations[-1]))
@@ -190,8 +215,6 @@ if __name__ == "__main__":
         if i_episode % TARGET_UPDATE == 0:
             episode_durations.append(t + 1)
             print("episode {}, score [B,Y] {}, dur {}".format(i_episode, reward, episode_durations[-1]))
-            print(np.array(all_actions).shape)
-            pickle.dump(np.array(all_actions), open("episode_{}_[B,Y] {}.p".format(i_episode, reward), "wb"))
             yellow_target_net.load_state_dict(yellow_policy_net.state_dict())
             torch.save(yellow_target_net, "yellow.pt")
 

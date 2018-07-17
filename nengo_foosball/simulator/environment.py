@@ -333,7 +333,7 @@ class Foosball(object):
         players = [p.offset for p in self.players[4:]]
         return np.concatenate([self.ball_pos, players]).flatten()
 
-    def step(self, action_vector, categorical=False):
+    def step(self, action_vector, categorical=True):
         """ actions are slide and rotation velocity for each stick starting with goalie (8 actions)
 
         returns state (ball x, ball y and y-pos of sliders), reward, done, score
