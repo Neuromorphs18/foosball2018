@@ -4,8 +4,8 @@
 // CONFIGURATION
 //##################################################################
 #define LED_FLASH_PERIOD_MS     1000
-#define SLAVE_ADDRESS           10           // 8/10/12/14 for Goalie/Defender/Midfield/Forward
-#define SLAVE_MODE              0            // 0/1 for Translation/Rotation
+#define SLAVE_ADDRESS           12           // 8/10/12/14 for Goalie/Defender/Midfield/Forward
+#define SLAVE_MODE              1            // 0/1 for Translation/Rotation
 #define SPEED_CAL_TRANSLATION   125
 #define SPEED_CAL_ROTATION      110
 #define SPEED_SLIDE_FAST        125
@@ -15,8 +15,8 @@
 #define SPEED_WINDUP            220
 #define SPEED_KICK              250
 #define SPEED_RESET             100
-#define POS_WINDUP              -180  
-#define POS_KICK                80 
+#define POS_WINDUP              -180
+#define POS_KICK                80
 #define POS_RESET               0
 #define DIFF_SLIDE_SLOW         200
 #define DIFF_ROTATE_SLOW        100
@@ -32,7 +32,7 @@
 // Pins
 #define PIN_DIRECTION           8
 #define PIN_PWM                 9
-#define PIN_OUTER_SWITCH        11 
+#define PIN_OUTER_SWITCH        11
 #define PIN_INNER_SWITCH        12
 #define PIN_ENCODER_FORWARD     2
 #define PIN_ENCODER_BACKWARD    3
@@ -52,8 +52,6 @@ typedef enum
   STATE_SLIDE_IN,
   STATE_SLIDE_OUT,
   STATE_ROTATE,
-  STATE_ROTATE_CW,
-  STATE_ROTATE_CCW,
   STATE_WINDUP,
   STATE_KICK,
   STATE_RESET
@@ -87,14 +85,14 @@ void setup()
   pinMode(PIN_OUTER_SWITCH, INPUT_PULLUP);
   pinMode(PIN_INNER_SWITCH, INPUT_PULLUP);
   pinMode(PIN_VERTICAL_SWITCH, INPUT_PULLUP);
-  
+
   ledOn(true);
   analogWrite(PIN_PWM, 0);
-    
+
   Wire.begin(SLAVE_ADDRESS + SLAVE_MODE);
   Wire.onReceive(receive_event);
   Wire.onRequest(request_event);
-    
+
   attachInterrupt(0, forward_change, CHANGE);
   attachInterrupt(1, backward_change, CHANGE);
 }
@@ -112,7 +110,7 @@ void loop()
   static bool           moveFast;
   unsigned long         timeNow;
   int                   diff;
-  
+
   timeNow = millis();
 
   ///////////////////////////////////////////////////
@@ -159,7 +157,7 @@ void loop()
       }
       break;
     }
-      
+
     case STATE_CALIBRATING_3:
     {
       if (digitalRead(PIN_OUTER_SWITCH) == LOW)
@@ -237,7 +235,7 @@ void loop()
 
     case STATE_SLIDE:
     {
-      
+
       // Move towards inner switch
       if (target_pulse < pulses)
       {
@@ -300,7 +298,7 @@ void loop()
         }
         break;
     }
-    
+
     case STATE_SLIDE_OUT:
     {
         if (digitalRead(PIN_OUTER_SWITCH) == LOW)
@@ -339,74 +337,29 @@ void loop()
 
     case STATE_ROTATE:
     {
-      if (target_pulse > pulses)
+      int distance = (target_pulse % (maximum_pulses * 2)) - (pulses % (maximum_pulses * 2));
+      if (distance > maximum_pulses)
       {
-        if (rotState == 2)
-        {
-          analogWrite(PIN_PWM, 0);
-        }
-        rotState = 1;
-
-        digitalWrite(PIN_DIRECTION, LOW);
-        state = STATE_ROTATE_CW;
+        distance -= 2 * maximum_pulses;
       }
-      else
+      else if (distance < -maximum_pulses)
       {
-        if (rotState == 1)
-        {
-          analogWrite(PIN_PWM, 0);
-        }
-        rotState = 2;
-        digitalWrite(PIN_DIRECTION, HIGH);
-        state = STATE_ROTATE_CCW;
+        distance += 2 * maximum_pulses;
       }
+      digitalWrite(PIN_DIRECTION, distance > 0 ? HIGH : LOW);
+      int speed = abs(distance);
+      if (speed > 255)
+      {
+        speed = 255;
+      }
+      else if (speed < 30)
+      {
+        speed = 0;
+      }
+      analogWrite(PIN_PWM, (byte)speed);
       break;
     }
 
-    case STATE_ROTATE_CW:
-    {
-      diff = target_pulse - pulses;
-      if (diff > DIFF_ROTATE_SLOW)
-      {
-        analogWrite(PIN_PWM, SPEED_ROTATE_FAST);
-      }
-      else if (diff > 0)
-      {
-        analogWrite(PIN_PWM, SPEED_ROTATE_SLOW);
-      }
-      else
-      {
-        analogWrite(PIN_PWM, 0);
-        rotState = 0;
-        noInterrupts();
-        state = (state == STATE_ROTATE_CW) ? STATE_IDLE : state;
-        interrupts();
-      }
-      break;
-    }
-
-    case STATE_ROTATE_CCW:
-    {
-      diff = pulses - target_pulse;
-      if (diff > DIFF_ROTATE_SLOW)
-      {
-        analogWrite(PIN_PWM, SPEED_ROTATE_FAST);
-      }
-      else if (diff > 0)
-      {
-        analogWrite(PIN_PWM, SPEED_ROTATE_SLOW);
-      }
-      else
-      {
-        analogWrite(PIN_PWM, 0);
-        rotState = 0;
-        noInterrupts();
-        state = (state == STATE_ROTATE_CCW) ? STATE_IDLE : state;
-        interrupts();
-      }
-      break;
-    }
-    
     case STATE_WINDUP:
     {
       if (digitalRead(PIN_VERTICAL_SWITCH) != LOW)
@@ -416,7 +369,7 @@ void loop()
         while (digitalRead(PIN_VERTICAL_SWITCH) != LOW);
         analogWrite(PIN_PWM, 0);
       }
-      
+
       digitalWrite(PIN_DIRECTION, LOW);
       analogWrite(PIN_PWM, SPEED_WINDUP);
       while (pulses >= POS_WINDUP);
@@ -563,14 +516,14 @@ void receive_event(int len)
 
         case CMD_ROTATE:
         {
-          if ((state == STATE_IDLE) && isCalibrated)
+          if ((state == STATE_IDLE || state == STATE_ROTATE) && isCalibrated)
           {
             state = STATE_ROTATE;
             target_pulse = (((int)cmd[2]) << 8) | ((int)cmd[1]);
           }
           break;
         }
-        
+
         default:
         {
           break;
@@ -650,5 +603,3 @@ bool crcIsValid(const byte * message, byte msgLen, byte crcVal)
 {
     return crcVal == crc(message, msgLen);
 }
-
-

@@ -56,7 +56,7 @@ void setup()
 
   pinMode(LED_BUILTIN, OUTPUT);
   ledOn(true);
-  
+
   Wire.begin();
   Serial.begin(115200);
 
@@ -80,7 +80,7 @@ void loop()
   byte                  idx;
   byte                  i;
   byte                  pktLen;
-  
+
   timeNow = millis();
 
   ///////////////////////////////////////////////////
@@ -104,7 +104,7 @@ void loop()
     serialBufferTx[1] = MSG_POSITION;
     serialBufferTx[2] = 4 + (5 * I2C_NUM_SLAVES);
     cnt               = 3;
-    
+
     for (i = 0; i < I2C_NUM_SLAVES; i++)
     {
       serialBufferTx[cnt+4] = STATUS_OFFLINE;
@@ -124,9 +124,9 @@ void loop()
           }
 
           if (idx == 6)
-          {         
+          {
             while (Wire.available()) Wire.read();
-             
+
             // Only accept packet if CRC is valid
             if (crcIsValid(i2cBuffer, 5, i2cBuffer[5]))
             {
@@ -145,7 +145,7 @@ void loop()
           }
         }
       }
-      
+
       cnt += 5;
     }
 
@@ -166,7 +166,7 @@ void loop()
   if (rxCnt >= 4)
   {
     idx = 0;
-    
+
     // Message must start with SOF character
     if (serialBufferRx[0] == SERIAL_SOF)
     {
@@ -191,7 +191,7 @@ void loop()
                 }
                 break;
               }
-        
+
               case MSG_CALIBRATE:
               {
                 if (pktLen == 4)
@@ -200,7 +200,7 @@ void loop()
                 }
                 break;
               }
-        
+
               case MSG_SLIDE:
               {
                 if (pktLen == 7)
@@ -227,7 +227,7 @@ void loop()
                   kick(serialBufferRx[3]);
                 }
               }
-        
+
               default:
               {
                 break;
@@ -262,7 +262,7 @@ void loop()
           break;
         }
       }
-  
+
       rxCnt -= idx;
       for (i = 0; i < rxCnt; i++)
       {
@@ -332,7 +332,7 @@ void calibrate(void)
   for (i = 0; i < I2C_NUM_SLAVES; i++)
   {
     if (i2cSlaveOnline[i])
-    {  
+    {
       // Send command to slave
       i2cSuccess = false;
       while (!i2cSuccess)
@@ -350,7 +350,7 @@ void calibrate(void)
             i2cBuffer[0] = Wire.read();
             i2cBuffer[1] = Wire.read();
             while (Wire.available()) Wire.read();
-            
+
             if ((i2cBuffer[0] == RESP_ACK) && (i2cBuffer[1] == ((byte)~RESP_ACK)))
             {
               i2cSuccess = true;
@@ -381,7 +381,7 @@ void calibrate(void)
           if (idx == 6)
           {
             while (Wire.available()) Wire.read();
-            
+
             if (crcIsValid(i2cBuffer, 5, i2cBuffer[5]))
             {
               if (i2cBuffer[4] == 0x01)
@@ -462,11 +462,11 @@ void rotate(byte index, int position)
 
   if (index == 0)
   {
-    index = 0;
+    index = 1;
   }
   else if (index == 1)
   {
-    index = 2;
+    index = 3;
   }
   else
   {
@@ -594,4 +594,3 @@ bool crcIsValid(const byte * message, byte msgLen, byte crcVal)
 {
     return crcVal == crc(message, msgLen);
 }
-
