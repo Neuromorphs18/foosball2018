@@ -135,8 +135,11 @@ if __name__ == "__main__":
     yellow_policy_net = yellow_policy_net
     yellow_target_net = yellow_target_net
 
-    num_episodes = 50
+    num_episodes = 150
     episode_durations = []
+
+    wins = [0,0]
+
     for i_episode in range(num_episodes):
         # Initialize the environment and state
         env.reset()
@@ -175,6 +178,10 @@ if __name__ == "__main__":
             optimize_model("yellow")
 
             if done:
+                if score[0] > score[1]:
+                    wins[0] += 1
+                else
+                    wins[1] += 1
                 episode_durations.append(t + 1)
                 print("episode {}, score [B,Y] {}, dur {}".format(i_episode, reward, episode_durations[-1]))
                 break
@@ -187,6 +194,11 @@ if __name__ == "__main__":
             pickle.dump(np.array(all_actions), open("episode_{}_[B,Y] {}.p".format(i_episode, reward), "wb"))
             yellow_target_net.load_state_dict(yellow_policy_net.state_dict())
             torch.save(yellow_target_net, "yellow.pt")
+
+
+        if sum(wins) > 20 and wins[1] / sum(wins) > 0.95:
+            print("Yellow wins 95% of the time, saving model and stopping training...")
+            break
 
     torch.save(yellow_target_net, "yellow.pt")
 
