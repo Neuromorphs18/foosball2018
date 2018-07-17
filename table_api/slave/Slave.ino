@@ -10,18 +10,22 @@
 #define SPEED_CAL_ROTATION      110
 #define SPEED_SLIDE_FAST        125
 #define SPEED_SLIDE_SLOW        100
+#define SPEED_ROTATE_FAST       125
+#define SPEED_ROTATE_SLOW       100
 #define SPEED_WINDUP            220
 #define SPEED_KICK              250
 #define SPEED_RESET             100
 #define POS_WINDUP              -180  
 #define POS_KICK                80 
 #define POS_RESET               0
-#define DIFF_SLOW               200
+#define DIFF_SLIDE_SLOW         200
+#define DIFF_ROTATE_SLOW        100
 
 #define CMD_HALT                0xF0
 #define CMD_CALIBRATE           0xF1
 #define CMD_SLIDE               0xF2
-#define CMD_KICK                0xF3
+#define CMD_ROTATE              0xF3
+#define CMD_KICK                0xF4
 #define RESP_ACK                0xFA
 #define RESP_NACK               0xFB
 
@@ -47,6 +51,9 @@ typedef enum
   STATE_SLIDE,
   STATE_SLIDE_IN,
   STATE_SLIDE_OUT,
+  STATE_ROTATE,
+  STATE_ROTATE_CW,
+  STATE_ROTATE_CCW,
   STATE_WINDUP,
   STATE_KICK,
   STATE_RESET
@@ -100,7 +107,8 @@ void loop()
   static unsigned long  ledTimestamp  = 0;
   static unsigned long  dlyTimestamp  = 0;
   static bool           ledState      = true;
-  static byte           moveState     = 0;
+  static byte           slideState    = 0;
+  static byte           rotState      = 0;
   static bool           moveFast;
   unsigned long         timeNow;
   int                   diff;
@@ -125,6 +133,8 @@ void loop()
     case STATE_IDLE:
     {
       analogWrite(PIN_PWM, 0);
+      slideState = 0;
+      rotState = 0;
       break;
     }
 
@@ -231,22 +241,22 @@ void loop()
       // Move towards inner switch
       if (target_pulse < pulses)
       {
-        if (moveState == 2)
+        if (slideState == 2)
         {
           analogWrite(PIN_PWM, 0);
         }
-        moveState = 1;
+        slideState = 1;
         digitalWrite(PIN_DIRECTION, LOW);
         state = STATE_SLIDE_IN;
       }
       // Move towards outer switch
       else
       {
-        if (moveState == 1)
+        if (slideState == 1)
         {
           analogWrite(PIN_PWM, 0);
         }
-        moveState = 2;
+        slideState = 2;
         digitalWrite(PIN_DIRECTION, HIGH);
         state = STATE_SLIDE_OUT;
       }
@@ -260,7 +270,7 @@ void loop()
         {
           analogWrite(PIN_PWM, 0);
           delay(100);
-          moveState = 0;
+          slideState = 0;
           noInterrupts();
           maximum_pulses -= pulses;
           pulses = 0;
@@ -270,7 +280,7 @@ void loop()
         else
         {
           diff = pulses - target_pulse;
-          if (moveFast || (diff > DIFF_SLOW))
+          if (moveFast || (diff > DIFF_SLIDE_SLOW))
           {
             moveFast = false;
             analogWrite(PIN_PWM, SPEED_SLIDE_FAST);
@@ -282,7 +292,7 @@ void loop()
           else
           {
             analogWrite(PIN_PWM, 0);
-            moveState = 0;
+            slideState = 0;
             noInterrupts();
             state = (state == STATE_SLIDE_IN) ? STATE_IDLE : state;
             interrupts();
@@ -297,7 +307,7 @@ void loop()
         {
           analogWrite(PIN_PWM, 0);
           delay(100);
-          moveState = 0;
+          slideState = 0;
           noInterrupts();
           maximum_pulses = pulses;
           state = (state == STATE_SLIDE_OUT) ? STATE_IDLE : state;
@@ -306,7 +316,7 @@ void loop()
         else
         {
           diff = target_pulse - pulses;
-          if (moveFast || (diff > DIFF_SLOW))
+          if (moveFast || (diff > DIFF_SLIDE_SLOW))
           {
             moveFast = false;
             analogWrite(PIN_PWM, SPEED_SLIDE_FAST);
@@ -318,13 +328,83 @@ void loop()
           else
           {
             analogWrite(PIN_PWM, 0);
-            moveState = 0;
+            slideState = 0;
             noInterrupts();
             state = (state == STATE_SLIDE_OUT) ? STATE_IDLE : state;
             interrupts();
           }
         }
         break;
+    }
+
+    case STATE_ROTATE:
+    {
+      if (target_pulse > pulses)
+      {
+        if (rotState == 2)
+        {
+          analogWrite(PIN_PWM, 0);
+        }
+        rotState = 1;
+
+        digitalWrite(PIN_DIRECTION, LOW);
+        state = STATE_ROTATE_CW;
+      }
+      else
+      {
+        if (rotState == 1)
+        {
+          analogWrite(PIN_PWM, 0);
+        }
+        rotState = 2;
+        digitalWrite(PIN_DIRECTION, HIGH);
+        state = STATE_ROTATE_CCW;
+      }
+      break;
+    }
+
+    case STATE_ROTATE_CW:
+    {
+      diff = target_pulse - pulses;
+      if (diff > DIFF_ROTATE_SLOW)
+      {
+        analogWrite(PIN_PWM, SPEED_ROTATE_FAST);
+      }
+      else if (diff > 0)
+      {
+        analogWrite(PIN_PWM, SPEED_ROTATE_SLOW);
+      }
+      else
+      {
+        analogWrite(PIN_PWM, 0);
+        rotState = 0;
+        noInterrupts();
+        state = (state == STATE_ROTATE_CW) ? STATE_IDLE : state;
+        interrupts();
+      }
+      break;
+    }
+
+    case STATE_ROTATE_CCW:
+    {
+      diff = pulses - target_pulse;
+      if (diff > DIFF_ROTATE_SLOW)
+      {
+        analogWrite(PIN_PWM, SPEED_ROTATE_FAST);
+      }
+      else if (diff > 0)
+      {
+        analogWrite(PIN_PWM, SPEED_ROTATE_SLOW);
+      }
+      else
+      {
+        analogWrite(PIN_PWM, 0);
+        rotState = 0;
+        noInterrupts();
+        state = (state == STATE_ROTATE_CCW) ? STATE_IDLE : state;
+        interrupts();
+      }
+      break;
     }
     
     case STATE_WINDUP:
@@ -361,6 +441,12 @@ void loop()
       analogWrite(PIN_PWM, SPEED_RESET);
       while (pulses >= POS_RESET);
       analogWrite(PIN_PWM, 0);
+      state = STATE_IDLE;
+      break;
+    }
+
+    default:
+    {
       state = STATE_IDLE;
       break;
     }
@@ -471,6 +557,16 @@ void receive_event(int len)
           if ((state == STATE_IDLE) && isCalibrated)
           {
             state = STATE_WINDUP;
+          }
+          break;
+        }
+
+        case CMD_ROTATE:
+        {
+          if ((state == STATE_IDLE) && isCalibrated)
+          {
+            state = STATE_ROTATE;
+            target_pulse = (((int)cmd[2]) << 8) | ((int)cmd[1]);
           }
           break;
         }
