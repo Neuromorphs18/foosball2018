@@ -38,13 +38,12 @@ class Player(object):
         self.display = display
 
     def act(self, action):
-        # 0 = left, 1 = right, 2 = kick
-        self.neg = 0
-        if action == 0:
+        # 0 = nothing, 1 = left, 2 = right, 3 = kick
+        if action == 1:
             self.slide(0.05, -500)
-        elif action == 1:
-            self.slide(0.05, 500)
         elif action == 2:
+            self.slide(0.05, 500)
+        elif action == 3:
             self.rotate(0.25, -100)
             self.rotate(0.25, 100)
             self.rotate(0.01, -50)
@@ -361,4 +360,4 @@ if __name__ == "__main__":
     f = Foosball()
     for t in range(1000):
         f.step(np.random.uniform(-100, 100, 8), categorical=False)
-        f.step([np.random.randint(3) for x in range(4)], categorical=True)
+        f.step([np.random.randint(4) for x in range(4)], categorical=True)
