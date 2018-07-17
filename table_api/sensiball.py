@@ -141,7 +141,6 @@ class Sensiball:
         """
         if player not in [0,1,2,3]:
             raise ValueError('Invalid player specified for rotate')
-
         if   self.device1 and player in [0,1]:
             msg  = [SERIAL_SOF, MSG_ROTATE, 7, player, position & 0xFF, (position >> 8) & 0xFF]
             msg.append(self._crc(msg))
@@ -180,10 +179,10 @@ class Sensiball:
         msg = []
         while self.running:
             msg.append(ord(self.device1.read()))
-            
+
             # Message must start with SOF character
             while (len(msg) > 0) and (msg[0] != SERIAL_SOF):
-                del msg[0]                
+                del msg[0]
 
             # Message must be at least 4 bytes
             if len(msg) < 4:
@@ -236,7 +235,7 @@ class Sensiball:
 
             elif (msgType == MSG_CAL_DONE) and (msgLen == 4):
                 self.calFinished1 = True
-                        
+
             else:
                 raise ValueError("Invalid message received from device 1 [code: {0:02X} length: {1}]".format(msgType, msgLen))
 
@@ -249,8 +248,8 @@ class Sensiball:
 
             # Message must start with SOF character
             while (len(msg) > 0) and (msg[0] != SERIAL_SOF):
-                del msg[0]                
-            
+                del msg[0]
+
             # Message must be at least 4 bytes
             if len(msg) < 4:
                 continue
@@ -269,12 +268,12 @@ class Sensiball:
             msgType = msg[1]
 
             if (msgType == MSG_POSITION) and (msgLen == 24):
-                
+
                 with self.dataHandleLock:
                     for i in range(0,4):
                         idx = 3 + i*5
                         self.status[i+4] = struct.unpack('hhB', bytes(msg[idx:idx+5]))
-    
+
                     if not self.device1 or self.dataReady1:
                         # Update handlers
                         positions = []
@@ -303,7 +302,7 @@ class Sensiball:
 
             elif (msgType == MSG_CAL_DONE) and (msgLen == 4):
                 self.calFinished2 = True
-            
+
             else:
                 raise ValueError("Invalid message received from device 2 [code: {0:02X} length: {1}]".format(msgType, msgLen))
 
@@ -311,8 +310,8 @@ class Sensiball:
 
     def _crc(self, msg):
         crc8 = 0x00
-        
-        for i in range(len(msg)): 
+
+        for i in range(len(msg)):
             val = msg[i]
             for b in range(8):
                 sum = (crc8 ^ val) & 0x01
