@@ -3,37 +3,43 @@
 //##################################################################
 // CONFIGURATION
 //##################################################################
-#define LED_FLASH_PERIOD_MS   1000
-#define UPDATE_PERIOD_MS      10
-#define I2C_BASE_ADDRESS      12          // 8 or 12 for Defenders or Attackers
-#define I2C_NUM_SLAVES        4
-#define I2C_TIMEOUT_MS        25
-#define SERIAL_SOF            0xAA
-#define SERIAL_MAX_PKT_LENGTH 32
+#define LED_FLASH_PERIOD_MS     1000
+#define UPDATE_PERIOD_MS        10
+#define I2C_BASE_ADDRESS        12          // 8 or 12 for Defenders or Attackers
+#define I2C_NUM_SLAVES          4
+#define I2C_TIMEOUT_MS          25
+#define I2C_SLAVE_EN_1          true
+#define I2C_SLAVE_EN_2          true
+#define I2C_SLAVE_EN_3          false
+#define I2C_SLAVE_EN_4          false
+#define SERIAL_SOF              0xAA
+#define SERIAL_MAX_PKT_LENGTH   32
 
-#define MSG_HALT              0xC0
-#define MSG_CALIBRATE         0xC1
-#define MSG_MOVE              0xC2
-#define MSG_POSITION          0xCA
+#define MSG_HALT                0xC0
+#define MSG_CALIBRATE           0xC1
+#define MSG_SLIDE               0xC2
+#define MSG_KICK                0xC3
+#define MSG_CAL_DONE            0xCA
+#define MSG_POSITION            0xCB
 
-#define STATUS_OFFLINE        0x50
-#define STATUS_CRC_ERROR      0x51
-#define STATUS_UNCALIBRATED   0x52
-#define STATUS_CALIBRATED     0x53
+#define STATUS_OFFLINE          0x50
+#define STATUS_CRC_ERROR        0x51
+#define STATUS_UNCALIBRATED     0x52
+#define STATUS_CALIBRATED       0x53
 
-#define CMD_POKE              0xF0
-#define CMD_HALT              0xF1
-#define CMD_CALIBRATE         0xF2
-#define CMD_SET_SPEED         0xF3
-#define RESP_ACK              0xFA
-#define RESP_NACK             0xFB
+#define CMD_HALT                0xF0
+#define CMD_CALIBRATE           0xF1
+#define CMD_SLIDE               0xF2
+#define CMD_KICK                0xF3
+#define RESP_ACK                0xFA
+#define RESP_NACK               0xFB
 
 //##################################################################
 // GLOBAL VARIABLES
 //##################################################################
 byte          serialBufferRx[128];
 byte          serialBufferTx[44];
-bool          i2cSlaveOnline[I2C_NUM_SLAVES] = {true, true, false, false};
+bool          i2cSlaveOnline[I2C_NUM_SLAVES] = {I2C_SLAVE_EN_1, I2C_SLAVE_EN_2, I2C_SLAVE_EN_3, I2C_SLAVE_EN_4};
 byte          i2cBuffer[6];
 bool          i2cSuccess;
 unsigned long i2cTimestamp;
@@ -50,7 +56,6 @@ void setup()
   ledOn(true);
   
   Wire.begin();
-  //Wire.setClock(10000);
   Serial.begin(115200);
 
   // Determine which slaves are available
@@ -127,7 +132,7 @@ void loop()
               serialBufferTx[cnt+1] = i2cBuffer[1];
               serialBufferTx[cnt+2] = i2cBuffer[2];
               serialBufferTx[cnt+3] = i2cBuffer[3];
-              serialBufferTx[cnt+4] = i2cBuffer[4];
+              serialBufferTx[cnt+4] = i2cBuffer[4] == 0x01 ? STATUS_CALIBRATED : STATUS_UNCALIBRATED;
             }
             else
             {
@@ -181,7 +186,6 @@ void loop()
                 if (pktLen == 4)
                 {
                   halt();
-                  forceSpeedUpdate = true;
                 }
                 break;
               }
@@ -191,19 +195,26 @@ void loop()
                 if (pktLen == 4)
                 {
                   calibrate();
-                  forceSpeedUpdate = true;
                 }
                 break;
               }
         
-              case MSG_MOVE:
+              case MSG_SLIDE:
               {
-                if (pktLen == 9)
+                if (pktLen == 7)
                 {
-                  setSpeed(serialBufferRx[3], &serialBufferRx[4], forceSpeedUpdate);
-                  forceSpeedUpdate = false;
+                  int pos = (((int)serialBufferRx[5])<<8) | ((int)serialBufferRx[4]);
+                  slide(serialBufferRx[3], pos);
                 }
                 break;
+              }
+
+              case MSG_KICK:
+              {
+                if (pktLen == 5)
+                {
+                  kick(serialBufferRx[3]);
+                }
               }
         
               default:
@@ -253,49 +264,6 @@ void loop()
 //##################################################################
 // COMMANDS
 //##################################################################
-void poke(byte tries)
-{
-  byte msg[4];
-  byte cnt;
-  byte i;
-
-  msg[0] = CMD_POKE;
-  msg[1] = 0;
-  msg[2] = 0;
-  msg[3] = crc(msg, 3);
-
-  for (i = 0; i < I2C_NUM_SLAVES; i++)
-  {
-    i2cSlaveOnline[i] = false;
-    
-    while (tries--)
-    {
-      Wire.beginTransmission(I2C_BASE_ADDRESS + i);
-      cnt = Wire.write(msg, 4);
-      Wire.endTransmission();
-  
-      if (cnt == 0)
-      {
-        break;
-      }
-  
-      Wire.requestFrom(I2C_BASE_ADDRESS + i, 2);
-      i2cTimestamp = millis();
-      while ((millis() - i2cTimestamp) < I2C_TIMEOUT_MS)
-      {
-        if (Wire.available() >= 2)
-        {
-          i2cBuffer[0] = Wire.read();
-          i2cBuffer[1] = Wire.read();
-          while (Wire.available()) Wire.read();
-          i2cSlaveOnline[i] = true;
-          break;
-        }
-      }
-    }
-  }
-}
-
 void halt(void)
 {
   byte msg[4];
@@ -371,7 +339,7 @@ void calibrate(void)
             i2cBuffer[0] = Wire.read();
             i2cBuffer[1] = Wire.read();
             while (Wire.available()) Wire.read();
-          
+            
             if ((i2cBuffer[0] == RESP_ACK) && (i2cBuffer[1] == ((byte)~RESP_ACK)))
             {
               i2cSuccess = true;
@@ -405,7 +373,7 @@ void calibrate(void)
             
             if (crcIsValid(i2cBuffer, 5, i2cBuffer[5]))
             {
-              if (i2cBuffer[4] == STATUS_CALIBRATED)
+              if (i2cBuffer[4] == 0x01)
               {
                 i2cSuccess = true;
               }
@@ -417,68 +385,117 @@ void calibrate(void)
       }
     }
   }
+
+  serialBufferTx[0] = SERIAL_SOF;
+  serialBufferTx[1] = MSG_CAL_DONE;
+  serialBufferTx[2] = 4;
+  serialBufferTx[3] = crc(serialBufferTx, 3);
+  Serial.write(serialBufferTx, 4);
 }
 
-void setSpeed(byte direction, byte speed[], bool forceUpdate)
+void slide(byte index, int position)
 {
-  static byte   currDirection;
-  static byte   currSpeed[I2C_NUM_SLAVES];
-  byte          msg[4];
-  byte          dir;
-  byte          currDir;
-  byte          i;
+  byte msg[4];
 
-  msg[0] = CMD_SET_SPEED;
-                
-  for (i = 0; i < I2C_NUM_SLAVES; i++)
+  if (index == 0)
   {
-    if (i2cSlaveOnline[i])
+    index = 0;
+  }
+  else if (index == 1)
+  {
+    index = 2;
+  }
+  else
+  {
+    return;
+  }
+
+  msg[0] = CMD_SLIDE;
+  msg[1] = (byte)position;
+  msg[2] = (byte)(position >> 8);
+  msg[3] = crc(msg, 3);
+
+  if (i2cSlaveOnline[index])
+  {
+    i2cSuccess = false;
+    while (!i2cSuccess)
     {
-      dir     = (direction     >> i) & 0x01;
-      currDir = (currDirection >> i) & 0x01;
+      Wire.beginTransmission(I2C_BASE_ADDRESS + index);
+      Wire.write(msg, 4);
+      Wire.endTransmission();
 
-      // Only update the motor's speed if it's changed or we're forced
-      // to set the speed on all motors.
-      if (forceUpdate || (dir != currDir) || (speed[i] != currSpeed[i]))
+      Wire.requestFrom(I2C_BASE_ADDRESS + index, 2);
+      i2cTimestamp = millis();
+      while ((millis() - i2cTimestamp) < I2C_TIMEOUT_MS)
       {
-        msg[1] = dir;
-        msg[2] = speed[i];
-        msg[3] = crc(msg, 3); 
-      
-        // Send command to slave and make keep trying until it confirms
-        // that it successfully received it.
-        i2cSuccess = false;
-        while (!i2cSuccess)
+        if (Wire.available() >= 2)
         {
-          Wire.beginTransmission(I2C_BASE_ADDRESS + i);
-          Wire.write(msg, 4);
-          Wire.endTransmission();
+          i2cBuffer[0] = Wire.read();
+          i2cBuffer[1] = Wire.read();
+          while (Wire.available()) Wire.read();
 
-          Wire.requestFrom(I2C_BASE_ADDRESS + i, 2);
-          i2cTimestamp = millis();
-          while ((millis() - i2cTimestamp) < I2C_TIMEOUT_MS)
+          if ((i2cBuffer[0] == RESP_ACK) && (i2cBuffer[1] == ((byte)~RESP_ACK)))
           {
-            if (Wire.available() >= 2)
-            {
-              i2cBuffer[0] = Wire.read();
-              i2cBuffer[1] = Wire.read();
-              while (Wire.available()) Wire.read();
-
-              if ((i2cBuffer[0] == RESP_ACK) && (i2cBuffer[1] == ((byte)~RESP_ACK)))
-              {
-                i2cSuccess = true;
-              }
-              break;
-            }
+            i2cSuccess = true;
           }
+          break;
         }
       }
     }
+  }
+}
 
-    currSpeed[i] = speed[i];
+void kick(byte index)
+{
+  byte msg[4];
+  byte i;
+
+  if (index == 0)
+  {
+    index = 1;
+  }
+  else if (index == 1)
+  {
+    index = 3;
+  }
+  else
+  {
+    return;
   }
 
-  currDirection = direction;
+  msg[0] = CMD_KICK;
+  msg[1] = 0;
+  msg[2] = 0;
+  msg[3] = crc(msg, 3);
+
+  if (i2cSlaveOnline[index])
+  {
+    i2cSuccess = false;
+    while (!i2cSuccess)
+    {
+      Wire.beginTransmission(I2C_BASE_ADDRESS + index);
+      Wire.write(msg, 4);
+      Wire.endTransmission();
+
+      Wire.requestFrom(I2C_BASE_ADDRESS + index, 2);
+      i2cTimestamp = millis();
+      while ((millis() - i2cTimestamp) < I2C_TIMEOUT_MS)
+      {
+        if (Wire.available() >= 2)
+        {
+          i2cBuffer[0] = Wire.read();
+          i2cBuffer[1] = Wire.read();
+          while (Wire.available()) Wire.read();
+
+          if ((i2cBuffer[0] == RESP_ACK) && (i2cBuffer[1] == ((byte)~RESP_ACK)))
+          {
+            i2cSuccess = true;
+          }
+          break;
+        }
+      }
+    }
+  }
 }
 
 //##################################################################
