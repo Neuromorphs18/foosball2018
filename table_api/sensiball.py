@@ -7,9 +7,10 @@ import time
 SERIAL_SOF          = 0xAA
 MSG_HALT            = 0xC0
 MSG_CALIBRATE       = 0xC1
-MSG_SET_SPEEDS      = 0xC2
+MSG_SLIDE           = 0xC2
 MSG_KICK            = 0xC3
-MSG_POSITION        = 0xCA
+MSG_CAL_DONE        = 0xCA
+MSG_POSITION        = 0xCB
 STATUS_OFFLINE      = 0x50
 STATUS_CRC_ERROR    = 0x51
 STATUS_UNCALIBRATED = 0x52
@@ -25,6 +26,8 @@ class Sensiball:
         self.printInfo      = False
         self.dataReady1     = False
         self.dataReady2     = False
+        self.calFinished1   = False
+        self.calFinished2   = False
         self.status         = [(0,0,STATUS_OFFLINE)]*8
 
     def open(self, port1, port2, baud):
@@ -63,10 +66,10 @@ class Sensiball:
         Handler function must have the following format:
             my_handler(positions)
                 positions   List containing the following structure:
-                                [   (goalie_pulses, goalie_pulses_max),
-                                    (defender_pulses, defender_pulses_max),
-                                    (midfield_pulses, midfield_pulses_max),
-                                    (forward_pulses, forward_pulses_max)  ]
+                                [   (goalie_position, goalie_position_max),
+                                    (defender_position, defender_position_max),
+                                    (midfield_position, midfield_position_max),
+                                    (forward_position, forward_position_max)  ]
         """
         self.handlers.append(handler)
 
@@ -81,6 +84,8 @@ class Sensiball:
             self.device2.flush()
 
     def send_calibrate(self):
+        self.calFinished1 = False
+        self.calFinished2 = False
         msg = [SERIAL_SOF, MSG_CALIBRATE, 4]
         msg.append(self._crc(msg))
         if self.device1:
@@ -89,65 +94,61 @@ class Sensiball:
         if self.device2:
             self.device2.write(bytearray(msg))
             self.device2.flush()
-        time.sleep(5)
+        while (self.device1 and not self.calFinished1) or (self.device2 and not self.calFinished2):
+            None
+        maxVals = []
+        def calHandler(v):
+            for s in v:
+                maxVals.append(s[1])
+        self.handlers.append(calHandler)
+        while len(maxVals) == 0:
+            None
+        del self.handlers[-1]
+        return maxVals
 
-    def send_speeds(self, speeds):
+    def slide(self, player, position):
         """
-        speeds = (  goalie_translation,
-                    goalie_rotation,
-                    defender_translation,
-                    defender_rotation,
-                    midfield_translation,
-                    midfield_rotation,
-                    forward_translation,
-                    forward_rotation    )
-        Speeds must be in the range [-255, 255]
+        Slide player to position.
+        player = 0, 1, 2 or 3
+                0 => Goalie
+                1 => Defender
+                2 => Midfield
+                3 => Forward
         """
-        if len(speeds) != 8:
-            raise ValueError('speeds must contain height values')
+        if player not in [0,1,2,3]:
+            raise ValueError('Invalid player specified for slide')
 
-        clockwise   = 0
-        spd         = []
-        for i, speed in enumerate(speeds):
-            clockwise |= ((1 if speed >= 0 else 0) << i)
-            if abs(speed) > 255:
-                spd.append(255)
-            else:
-                spd.append(abs(speed))
-
-        if self.device1:
-            msg  = [SERIAL_SOF, MSG_SET_SPEEDS, 9, (clockwise & 0x0F)]
-            msg += spd[0:4]
+        if   self.device1 and player in [0,1]:
+            msg  = [SERIAL_SOF, MSG_SLIDE, 7, player, position & 0xFF, (position >> 8) & 0xFF]
             msg.append(self._crc(msg))
             self.device1.write(bytearray(msg))
             self.device1.flush()
-        if self.device2:
-            msg  = [SERIAL_SOF, MSG_SET_SPEEDS, 9, ((clockwise >> 4) & 0x0F)]
-            msg += spd[4:8]
+        elif self.device2 and player in [2,3]:
+            msg  = [SERIAL_SOF, MSG_SLIDE, 7, player-2, position & 0xFF, (position >> 8) & 0xFF]
             msg.append(self._crc(msg))
             self.device2.write(bytearray(msg))
             self.device2.flush()
 
-    def send_kick(self, position):
+    def kick(self, player):
         """
-        position = 0, 1, 2 or 3
-            0 => Goalie
-            1 => Defender
-            2 => Midfield
-            3 => Forward
+        Kick player.
+        player = 0, 1, 2 or 3
+                0 => Goalie
+                1 => Defender
+                2 => Midfield
+                3 => Forward
         """
-        if position not in [0,1,2,3]:
-            raise ValueError('Invalid position specified for kick')
+        if player not in [0,1,2,3]:
+            raise ValueError('Invalid player specified for kick')
 
-        if   self.device1 and position in [0,1]:
-            msg  = [SERIAL_SOF, MSG_KICK, 5, position]
+        if   self.device1 and player in [0,1]:
+            msg  = [SERIAL_SOF, MSG_KICK, 5, player]
             msg.append(self._crc(msg))
             self.device1.write(bytearray(msg))
             self.device1.flush()
-        elif self.device2 and position in [2,3]:
-            msg  = [SERIAL_SOF, MSG_KICK, 5, position-2]
+        elif self.device2 and player in [2,3]:
+            msg  = [SERIAL_SOF, MSG_KICK, 5, player-2]
             msg.append(self._crc(msg))
-            print(msg)
             self.device2.write(bytearray(msg))
             self.device2.flush()
 
@@ -182,7 +183,7 @@ class Sensiball:
                     for i in range(0,4):
                         idx = 3 + i*5
                         self.status[i] = struct.unpack('hhB', bytes(msg[idx:idx+5]))
-                    
+
                     if not self.device2 or self.dataReady2:
                         # Update handlers
                         positions = []
@@ -208,6 +209,10 @@ class Sensiball:
                         self.dataReady2 = False
                     else:
                         self.dataReady1 = True
+
+            elif (msgType == MSG_CAL_DONE) and (msgLen == 4):
+                self.calFinished1 = True
+                        
             else:
                 raise ValueError("Invalid message received from device 1 [code: {0:02X} length: {1}]".format(msgType, msgLen))
 
@@ -271,6 +276,10 @@ class Sensiball:
                         self.dataReady2 = False
                     else:
                         self.dataReady2 = True
+
+            elif (msgType == MSG_CAL_DONE) and (msgLen == 4):
+                self.calFinished2 = True
+            
             else:
                 raise ValueError("Invalid message received from device 2 [code: {0:02X} length: {1}]".format(msgType, msgLen))
 
