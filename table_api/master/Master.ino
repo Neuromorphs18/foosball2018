@@ -18,7 +18,8 @@
 #define MSG_HALT                0xC0
 #define MSG_CALIBRATE           0xC1
 #define MSG_SLIDE               0xC2
-#define MSG_KICK                0xC3
+#define MSG_ROTATE              0xC3
+#define MSG_KICK                0xC4
 #define MSG_CAL_DONE            0xCA
 #define MSG_POSITION            0xCB
 
@@ -30,7 +31,8 @@
 #define CMD_HALT                0xF0
 #define CMD_CALIBRATE           0xF1
 #define CMD_SLIDE               0xF2
-#define CMD_KICK                0xF3
+#define CMD_ROTATE              0xF3
+#define CMD_KICK                0xF4
 #define RESP_ACK                0xFA
 #define RESP_NACK               0xFB
 
@@ -207,6 +209,15 @@ void loop()
                   slide(serialBufferRx[3], pos);
                 }
                 break;
+              }
+
+              case MSG_ROTATE:
+              {
+                if (pktLen == 7)
+                {
+                  int pos = (((int)serialBufferRx[5])<<8) | ((int)serialBufferRx[4]);
+                  rotate(serialBufferRx[3], pos);
+                }
               }
 
               case MSG_KICK:
@@ -411,6 +422,58 @@ void slide(byte index, int position)
   }
 
   msg[0] = CMD_SLIDE;
+  msg[1] = (byte)position;
+  msg[2] = (byte)(position >> 8);
+  msg[3] = crc(msg, 3);
+
+  if (i2cSlaveOnline[index])
+  {
+    i2cSuccess = false;
+    while (!i2cSuccess)
+    {
+      Wire.beginTransmission(I2C_BASE_ADDRESS + index);
+      Wire.write(msg, 4);
+      Wire.endTransmission();
+
+      Wire.requestFrom(I2C_BASE_ADDRESS + index, 2);
+      i2cTimestamp = millis();
+      while ((millis() - i2cTimestamp) < I2C_TIMEOUT_MS)
+      {
+        if (Wire.available() >= 2)
+        {
+          i2cBuffer[0] = Wire.read();
+          i2cBuffer[1] = Wire.read();
+          while (Wire.available()) Wire.read();
+
+          if ((i2cBuffer[0] == RESP_ACK) && (i2cBuffer[1] == ((byte)~RESP_ACK)))
+          {
+            i2cSuccess = true;
+          }
+          break;
+        }
+      }
+    }
+  }
+}
+
+void rotate(byte index, int position)
+{
+  byte msg[4];
+
+  if (index == 0)
+  {
+    index = 0;
+  }
+  else if (index == 1)
+  {
+    index = 2;
+  }
+  else
+  {
+    return;
+  }
+
+  msg[0] = CMD_ROTATE;
   msg[1] = (byte)position;
   msg[2] = (byte)(position >> 8);
   msg[3] = crc(msg, 3);
