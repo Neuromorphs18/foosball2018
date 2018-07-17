@@ -47,7 +47,6 @@ class Player(object):
             self.rotate(0.25, -100)
             self.rotate(0.25, 100)
             self.rotate(0.01, -50)
-            self.neg = 1 - self.neg
 
     def slide(self, dt, velocity):
         self.slide_velocity = velocity
@@ -216,7 +215,7 @@ class Foosball(object):
 
         b = self.agent.select_action()
         baction = np.zeros(8)
-        unit = 150
+        unit = 100
         if b % 2 != 0:
             # convert to negative
             baction[(b - 1) // 2] = -unit
@@ -343,6 +342,8 @@ class Foosball(object):
         assert categorical == False and len(action_vector) == 8 or categorical == True and len(action_vector) == 4, \
             "Cannot use action vector of length {} with categorical={}".format(len(action_vector), categorical)
 
+        action_vector = action_vector * 1000 if categorical else action_vector
+
         self.update(0.05, action_vector, categorical=categorical)
 
         #reward = change in reward +1 for goal to blue, -1 for goal to yellow
@@ -359,5 +360,5 @@ class Foosball(object):
 if __name__ == "__main__":
     f = Foosball()
     for t in range(1000):
-        f.step(np.random.uniform(-100, 100, 8), categorical=False)
+        f.step(np.random.uniform(-1, 1, 8), categorical=False)
         f.step([np.random.randint(4) for x in range(4)], categorical=True)
