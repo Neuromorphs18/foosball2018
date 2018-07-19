@@ -4,8 +4,8 @@
 // CONFIGURATION
 //##################################################################
 #define LED_FLASH_PERIOD_MS     1000
-#define SLAVE_ADDRESS           12           // 8/10/12/14 for Goalie/Defender/Midfield/Forward
-#define SLAVE_MODE              1            // 0/1 for Translation/Rotation
+#define SLAVE_ADDRESS           12             // 8/10/12/14 for Goalie/Defender/Midfield/Forward
+#define SLAVE_MODE              1             // 0/1 for Translation/Rotation
 #define SPEED_CAL_TRANSLATION   125
 #define SPEED_CAL_ROTATION      110
 #define SPEED_SLIDE_FAST        125
@@ -14,10 +14,10 @@
 #define SPEED_ROTATE_SLOW       100
 #define SPEED_WINDUP            220
 #define SPEED_KICK              250
-#define SPEED_RESET             100
+#define SPEED_RESET             90
 #define POS_WINDUP              -180
 #define POS_KICK                80
-#define POS_RESET               0
+#define POS_RESET               -2
 #define DIFF_SLIDE_SLOW         200
 #define DIFF_ROTATE_SLOW        100
 
@@ -362,14 +362,6 @@ void loop()
 
     case STATE_WINDUP:
     {
-      if (digitalRead(PIN_VERTICAL_SWITCH) != LOW)
-      {
-        digitalWrite(PIN_DIRECTION, HIGH);
-        analogWrite(PIN_PWM, SPEED_CAL_ROTATION);
-        while (digitalRead(PIN_VERTICAL_SWITCH) != LOW);
-        analogWrite(PIN_PWM, 0);
-      }
-
       digitalWrite(PIN_DIRECTION, LOW);
       analogWrite(PIN_PWM, SPEED_WINDUP);
       while (pulses >= POS_WINDUP);
