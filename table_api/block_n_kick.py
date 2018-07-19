@@ -5,10 +5,19 @@ import sys
 from sensiball import Sensiball
 import redis
 import numpy as np
+import socket
 
-database = redis.StrictRedis("192.168.0.150")
+UDP_IP = "192.168.0.150"
+UDP_PORT = 5005
+ 
+sock = socket.socket(socket.AF_INET, # Internet
+                      socket.SOCK_DGRAM) # UDP
+sock.bind((UDP_IP, UDP_PORT))
+
+
+"""database = redis.StrictRedis("192.168.0.150")
 database.set("pos", "0;0")
-database.set("vel", "0;0")
+database.set("vel", "0;0")"""
 
 kick_range = 10
 
@@ -95,10 +104,12 @@ def kick(i, bx):
 #     time.sleep(0.1)
 
 while True:
-    ball_x, ball_y = database.get('pos').decode('utf-8').split(";")
+    data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
+    
+    ball_x, ball_y, vx, vy = data.split(";")
     ball_x = float(ball_x)
     ball_y = float(ball_y)
-    vx, vy = database.get('vel').decode('utf-8').split(";")
+
     print(vx, vy, ball_x, ball_y)
     pred_x, pred_y = float(ball_x) + 10*float(vx), float(ball_y) + 10*float(vy)
  
